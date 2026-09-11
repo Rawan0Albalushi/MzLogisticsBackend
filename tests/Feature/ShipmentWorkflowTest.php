@@ -12,6 +12,7 @@ use App\Models\DriverProfile;
 use App\Models\Organization;
 use App\Models\Truck;
 use App\Models\User;
+use Database\Seeders\PaymentMethodSeeder;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -24,6 +25,7 @@ class ShipmentWorkflowTest extends TestCase
     {
         parent::setUp();
         $this->seed(RolePermissionSeeder::class);
+        $this->seed(PaymentMethodSeeder::class);
     }
 
     public function test_quotation_acceptance_creates_job_and_trips(): void

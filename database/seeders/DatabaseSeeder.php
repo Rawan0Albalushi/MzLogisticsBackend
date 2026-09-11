@@ -13,5 +13,7 @@ class DatabaseSeeder extends Seeder
             PaymentMethodSeeder::class,
             DemoDataSeeder::class,
         ]);
+
+        app(\App\Services\WalletLedgerService::class)->backfillFromExistingPayments();
     }
 }

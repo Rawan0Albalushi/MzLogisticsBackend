@@ -20,6 +20,7 @@ use App\Models\ShipmentRequest;
 use App\Models\TransportJob;
 use App\Models\Trip;
 use App\Models\User;
+use App\Models\Wallet;
 use Illuminate\Database\Eloquent\Builder;
 
 class DashboardService
@@ -78,6 +79,14 @@ class DashboardService
             ->when($user->isProvider(), fn (Builder $q) => $q->where('provider_organization_id', $user->organization_id))
             ->when($user->isCustomer() || $user->isDriver(), fn (Builder $q) => $q->whereRaw('1 = 0'));
 
+        $wallets = Wallet::query()
+            ->when($user->isProvider(), fn (Builder $q) => $q->where('organization_id', $user->organization_id))
+            ->when($user->isCustomer() || $user->isDriver(), fn (Builder $q) => $q->whereRaw('1 = 0'));
+
+        $walletPending = (float) (clone $wallets)->sum('pending_balance');
+        $walletAvailable = (float) (clone $wallets)->sum('available_balance');
+        $walletReserved = (float) (clone $wallets)->sum('reserved_balance');
+
         return [
             'shipments_open' => (clone $shipments)->where('status', ShipmentStatus::Published)->count(),
             'shipments_total' => (clone $shipments)->count(),
@@ -95,7 +104,10 @@ class DashboardService
             'payments_pending' => (clone $payments)->whereIn('status', [PaymentStatus::Pending, PaymentStatus::Processing])->count(),
             'payments_completed_amount' => (float) (clone $payments)->where('status', PaymentStatus::Completed)->sum('amount'),
             'commission_amount' => (float) (clone $payments)->where('status', PaymentStatus::Completed)->sum('commission_amount'),
-            'provider_receivable' => (float) (clone $payments)->where('status', PaymentStatus::Completed)->sum('provider_amount'),
+            'wallet_pending' => $walletPending,
+            'wallet_available' => $walletAvailable,
+            'wallet_reserved' => $walletReserved,
+            'provider_receivable' => round($walletPending + $walletAvailable + $walletReserved, 3),
             'settlements_pending' => (clone $settlements)->whereIn('status', [SettlementStatus::Pending, SettlementStatus::Processing])->count(),
             'invoices_count' => (clone $invoices)->count(),
             'invoices_unpaid' => (clone $invoices)->where('status', InvoiceStatus::Issued)->count(),

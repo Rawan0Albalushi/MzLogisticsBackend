@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\ShipmentController;
 use App\Http\Controllers\Api\TripController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\WalletController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
@@ -77,6 +78,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/providers', [OrganizationController::class, 'providers']);
         Route::get('/organizations/{organization}', [OrganizationController::class, 'show']);
         Route::patch('/organizations/{organization}', [OrganizationController::class, 'update']);
+        Route::patch('/organizations/{organization}/commission-rate', [OrganizationController::class, 'updateCommissionRate']);
         Route::post('/organizations/{organization}/verify', [OrganizationController::class, 'verify']);
 
         Route::get('/payments', [FinanceController::class, 'payments']);
@@ -89,6 +91,9 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/settlements', [FinanceController::class, 'settlements']);
         Route::post('/settlements', [FinanceController::class, 'storeSettlement']);
         Route::post('/settlements/{settlement}/complete', [FinanceController::class, 'completeSettlement']);
+        Route::get('/wallets', [WalletController::class, 'index']);
+        Route::get('/wallets/{wallet}', [WalletController::class, 'show']);
+        Route::get('/wallets/{wallet}/transactions', [WalletController::class, 'transactions']);
 
         Route::get('/users', [UserController::class, 'index']);
         Route::post('/users', [UserController::class, 'store']);

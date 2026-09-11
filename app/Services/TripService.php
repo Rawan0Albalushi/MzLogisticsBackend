@@ -23,6 +23,8 @@ use Illuminate\Validation\ValidationException;
 
 class TripService
 {
+    public function __construct(private readonly WalletLedgerService $walletLedger) {}
+
     /**
      * @param  array{truck_id: int, driver_id: int}  $payload
      */
@@ -279,6 +281,7 @@ class TripService
                 'status' => JobStatus::Completed,
                 'completed_at' => now(),
             ])->save();
+            $this->walletLedger->releaseCompletedJob($job->fresh());
             AuditLogger::record('job.completed', $job);
         }
 

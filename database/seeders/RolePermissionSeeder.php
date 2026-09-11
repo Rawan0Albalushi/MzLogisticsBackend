@@ -49,11 +49,14 @@ class RolePermissionSeeder extends Seeder
             ],
             'Finance Manager' => [
                 Permissions::DASHBOARD_VIEW,
+                Permissions::PROVIDERS_VIEW,
                 Permissions::PAYMENTS_VIEW,
                 Permissions::PAYMENTS_MANAGE,
                 Permissions::INVOICES_VIEW,
                 Permissions::SETTLEMENTS_VIEW,
                 Permissions::SETTLEMENTS_MANAGE,
+                Permissions::WALLETS_VIEW,
+                Permissions::WALLETS_MANAGE,
                 Permissions::REPORTS_VIEW,
                 Permissions::JOBS_VIEW,
             ],
@@ -62,6 +65,7 @@ class RolePermissionSeeder extends Seeder
                 Permissions::PAYMENTS_VIEW,
                 Permissions::INVOICES_VIEW,
                 Permissions::SETTLEMENTS_VIEW,
+                Permissions::WALLETS_VIEW,
             ],
             'Customer Support' => [
                 Permissions::DASHBOARD_VIEW,
@@ -147,6 +151,7 @@ class RolePermissionSeeder extends Seeder
                 Permissions::PAYMENTS_VIEW,
                 Permissions::INVOICES_VIEW,
                 Permissions::SETTLEMENTS_VIEW,
+                Permissions::WALLETS_VIEW,
             ],
             'Operations' => [
                 Permissions::DASHBOARD_VIEW,
@@ -185,6 +190,7 @@ class RolePermissionSeeder extends Seeder
                 Permissions::PAYMENTS_VIEW,
                 Permissions::INVOICES_VIEW,
                 Permissions::SETTLEMENTS_VIEW,
+                Permissions::WALLETS_VIEW,
             ],
             'Viewer' => [
                 Permissions::DASHBOARD_VIEW,

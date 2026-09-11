@@ -33,6 +33,8 @@ final class Permissions
     public const INVOICES_VIEW = 'invoices.view';
     public const SETTLEMENTS_VIEW = 'settlements.view';
     public const SETTLEMENTS_MANAGE = 'settlements.manage';
+    public const WALLETS_VIEW = 'wallets.view';
+    public const WALLETS_MANAGE = 'wallets.manage';
     public const REPORTS_VIEW = 'reports.view';
     public const USERS_MANAGE = 'users.manage';
     public const ROLES_MANAGE = 'roles.manage';
@@ -74,6 +76,8 @@ final class Permissions
             self::INVOICES_VIEW,
             self::SETTLEMENTS_VIEW,
             self::SETTLEMENTS_MANAGE,
+            self::WALLETS_VIEW,
+            self::WALLETS_MANAGE,
             self::REPORTS_VIEW,
             self::USERS_MANAGE,
             self::ROLES_MANAGE,

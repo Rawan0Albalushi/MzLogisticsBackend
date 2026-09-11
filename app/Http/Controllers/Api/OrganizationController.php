@@ -13,6 +13,7 @@ use App\Support\Permissions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class OrganizationController extends Controller
 {
@@ -105,6 +106,35 @@ class OrganizationController extends Controller
         AuditLogger::record('provider.verified', $organization, [], $data, $request->user());
 
         return ApiResponse::success(OrganizationResource::make($organization), 'Organization status updated.');
+    }
+
+    public function updateCommissionRate(Request $request, Organization $organization): JsonResponse
+    {
+        abort_unless($request->user()->isPlatform(), 403);
+        abort_unless(
+            $request->user()->can(Permissions::PROVIDERS_MANAGE)
+            || $request->user()->can(Permissions::SETTLEMENTS_MANAGE),
+            403
+        );
+
+        if (! $organization->isProvider()) {
+            throw ValidationException::withMessages([
+                'commission_rate' => ['Commission rate can only be set for service providers.'],
+            ]);
+        }
+
+        $data = $request->validate([
+            'commission_rate' => ['nullable', 'numeric', 'min:0', 'max:1'],
+        ]);
+
+        $previous = ['commission_rate' => $organization->commission_rate];
+        $organization->forceFill([
+            'commission_rate' => $data['commission_rate'] ?? null,
+        ])->save();
+
+        AuditLogger::record('provider.commission_updated', $organization, $previous, $data, $request->user());
+
+        return ApiResponse::success(OrganizationResource::make($organization->fresh()), 'Commission rate updated.');
     }
 
     private function assertCanView(Request $request, Organization $organization): void

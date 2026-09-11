@@ -8,6 +8,7 @@ use App\Enums\OrganizationType;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 #[Fillable([
@@ -81,6 +82,11 @@ class Organization extends Model
     public function providerJobs(): HasMany
     {
         return $this->hasMany(TransportJob::class, 'provider_organization_id');
+    }
+
+    public function wallet(): HasOne
+    {
+        return $this->hasOne(Wallet::class);
     }
 
     public function isProvider(): bool

@@ -28,6 +28,7 @@ class JobOrchestrationService
     public function __construct(
         private readonly PaymentGateway $paymentGateway,
         private readonly PaymentMethodService $paymentMethods,
+        private readonly WalletLedgerService $walletLedger,
     ) {}
 
     public function acceptQuotation(User $user, Quotation $quotation, ?string $method = null, ?string $callbackBaseUrl = null): QuotationAcceptanceResult
@@ -198,6 +199,8 @@ class JobOrchestrationService
 
         $existingJob = TransportJob::query()->where('quotation_id', $quotation->id)->first();
         if ($existingJob) {
+            $this->walletLedger->creditPendingEarning($payment, $existingJob, $user);
+
             return $existingJob->load(['trips', 'shipmentRequest', 'quotation', 'customerOrganization', 'providerOrganization']);
         }
 
@@ -291,6 +294,8 @@ class JobOrchestrationService
             'status' => ShipmentStatus::Awarded,
             'awarded_quotation_id' => $quotation->id,
         ])->save();
+
+        $this->walletLedger->creditPendingEarning($payment, $job, $user);
 
         AuditLogger::record('quotation.accepted', $quotation, [], ['job' => $job->reference], $user);
         AuditLogger::record('job.created', $job, [], $job->toArray(), $user);

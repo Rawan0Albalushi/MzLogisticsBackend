@@ -24,7 +24,9 @@ class OrganizationResource extends JsonResource
             'address' => $this->address,
             'status' => $this->status,
             'verification_notes' => $this->verification_notes,
-            'commission_rate' => $this->commission_rate,
+            'commission_rate' => $this->commission_rate !== null ? (float) $this->commission_rate : null,
+            'effective_commission_rate' => $this->resource->commissionRate(),
+            'uses_default_commission' => $this->commission_rate === null,
             'created_at' => $this->created_at,
         ];
     }

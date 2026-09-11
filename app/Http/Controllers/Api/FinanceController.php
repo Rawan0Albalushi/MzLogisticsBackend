@@ -2,22 +2,22 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Enums\SettlementStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\InvoiceResource;
 use App\Http\Resources\PaymentResource;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Settlement;
+use App\Services\SettlementService;
 use App\Support\ApiResponse;
-use App\Support\AuditLogger;
 use App\Support\Permissions;
-use App\Support\ReferenceGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class FinanceController extends Controller
 {
+    public function __construct(private readonly SettlementService $settlements) {}
+
     public function payments(Request $request): JsonResponse
     {
         abort_unless($request->user()->can(Permissions::PAYMENTS_VIEW), 403);
@@ -71,20 +71,11 @@ class FinanceController extends Controller
         $data = $request->validate([
             'provider_organization_id' => ['required', 'exists:organizations,id'],
             'amount' => ['required', 'numeric', 'min:0.001'],
-            'commission_amount' => ['required', 'numeric', 'min:0'],
-            'net_amount' => ['required', 'numeric', 'min:0'],
             'period_start' => ['required', 'date'],
             'period_end' => ['required', 'date', 'after_or_equal:period_start'],
         ]);
 
-        $settlement = Settlement::query()->create([
-            ...$data,
-            'reference' => ReferenceGenerator::next('STL', Settlement::class),
-            'currency' => config('mz.currency'),
-            'status' => SettlementStatus::Pending,
-        ]);
-
-        AuditLogger::record('settlement.created', $settlement, [], $settlement->toArray(), $request->user());
+        $settlement = $this->settlements->create($request->user(), $data);
 
         return ApiResponse::success($settlement, 'Settlement created.', 201);
     }
@@ -92,12 +83,7 @@ class FinanceController extends Controller
     public function completeSettlement(Request $request, Settlement $settlement): JsonResponse
     {
         abort_unless($request->user()->can(Permissions::SETTLEMENTS_MANAGE), 403);
-        $settlement->forceFill([
-            'status' => SettlementStatus::Completed,
-            'settled_at' => now(),
-        ])->save();
-        AuditLogger::record('settlement.completed', $settlement, [], ['status' => $settlement->status->value], $request->user());
 
-        return ApiResponse::success($settlement, 'Settlement completed.');
+        return ApiResponse::success($this->settlements->complete($request->user(), $settlement), 'Settlement completed.');
     }
 }
