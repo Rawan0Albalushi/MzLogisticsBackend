@@ -11,8 +11,8 @@ class OrganizationResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            'type' => $this->type,
-            'account_type' => $this->account_type,
+            'type' => $this->enumValue($this->type),
+            'account_type' => $this->enumValue($this->account_type),
             'name' => $this->name,
             'name_ar' => $this->name_ar,
             'commercial_register' => $this->commercial_register,
@@ -22,12 +22,17 @@ class OrganizationResource extends JsonResource
             'city' => $this->city,
             'country' => $this->country,
             'address' => $this->address,
-            'status' => $this->status,
+            'status' => $this->enumValue($this->status),
             'verification_notes' => $this->verification_notes,
             'commission_rate' => $this->commission_rate !== null ? (float) $this->commission_rate : null,
             'effective_commission_rate' => $this->resource->commissionRate(),
             'uses_default_commission' => $this->commission_rate === null,
             'created_at' => $this->created_at,
         ];
+    }
+
+    private function enumValue(mixed $value): mixed
+    {
+        return $value instanceof \BackedEnum ? $value->value : $value;
     }
 }

@@ -6,6 +6,7 @@ use App\Enums\AccountType;
 use App\Enums\OrganizationStatus;
 use App\Enums\OrganizationType;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -87,6 +88,16 @@ class Organization extends Model
     public function wallet(): HasOne
     {
         return $this->hasOne(Wallet::class);
+    }
+
+    public function scopeCustomers(Builder $query): Builder
+    {
+        return $query->where('type', OrganizationType::Customer);
+    }
+
+    public function scopeProviders(Builder $query): Builder
+    {
+        return $query->where('type', OrganizationType::Provider);
     }
 
     public function isProvider(): bool

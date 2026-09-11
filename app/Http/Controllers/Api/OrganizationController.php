@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\AccountType;
 use App\Enums\OrganizationStatus;
-use App\Enums\OrganizationType;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\OrganizationResource;
 use App\Models\Organization;
@@ -22,12 +22,19 @@ class OrganizationController extends Controller
         abort_unless($request->user()->can(Permissions::CUSTOMERS_VIEW), 403);
 
         $items = Organization::query()
-            ->where('type', OrganizationType::Customer)
+            ->customers()
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
+            ->when($request->filled('account_type'), function ($q) use ($request) {
+                $accountType = AccountType::tryFrom((string) $request->string('account_type'));
+                if ($accountType) {
+                    $q->where('account_type', $accountType);
+                }
+            })
             ->when($request->filled('search'), function ($q) use ($request) {
                 $search = $request->string('search');
                 $q->where(function ($builder) use ($search) {
                     $builder->where('name', 'like', "%{$search}%")
+                        ->orWhere('name_ar', 'like', "%{$search}%")
                         ->orWhere('email', 'like', "%{$search}%");
                 });
             })
@@ -42,7 +49,7 @@ class OrganizationController extends Controller
         abort_unless($request->user()->can(Permissions::PROVIDERS_VIEW), 403);
 
         $items = Organization::query()
-            ->where('type', OrganizationType::Provider)
+            ->providers()
             ->withCount(['trucks', 'driverProfiles', 'providerJobs'])
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($request->filled('search'), function ($q) use ($request) {
