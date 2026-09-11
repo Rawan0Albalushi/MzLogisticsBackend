@@ -236,7 +236,14 @@ class TripService
     public function paginateFor(User $user, array $filters = []): LengthAwarePaginator
     {
         $query = Trip::query()
-            ->with(['transportJob.customerOrganization', 'transportJob.providerOrganization', 'truck', 'driver', 'proofOfDelivery'])
+            ->with([
+                'transportJob.customerOrganization',
+                'transportJob.providerOrganization',
+                'transportJob.quotation',
+                'truck',
+                'driver',
+                'proofOfDelivery',
+            ])
             ->latest();
 
         if ($user->isDriver()) {

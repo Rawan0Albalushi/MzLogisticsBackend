@@ -98,7 +98,8 @@ class JobOrchestrationService
                 'status' => JobStatus::PendingDispatch,
             ]);
 
-            for ($index = 1; $index <= $quotation->trip_count; $index++) {
+            $tripCount = $quotation->dispatchTripCount();
+            for ($index = 1; $index <= $tripCount; $index++) {
                 Trip::query()->create([
                     'reference' => ReferenceGenerator::next('TRP', Trip::class),
                     'transport_job_id' => $job->id,

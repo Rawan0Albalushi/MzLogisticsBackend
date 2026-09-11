@@ -58,7 +58,7 @@ class QuotationService
                 'truck_count' => $payload['truck_count'],
                 'truck_type' => $payload['truck_type'],
                 'truck_capacity_tons' => $payload['truck_capacity_tons'],
-                'trip_count' => $payload['trip_count'],
+                'trip_count' => max((int) $payload['truck_count'], (int) $payload['trip_count']),
                 'quantity_per_trip' => $payload['quantity_per_trip'],
                 'duration_days' => $payload['duration_days'],
                 'additional_costs' => $payload['additional_costs'] ?? 0,

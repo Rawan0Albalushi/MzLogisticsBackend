@@ -32,7 +32,14 @@ class TripController extends Controller
         $this->authorize('view', $trip);
 
         return ApiResponse::success(
-            TripResource::make($trip->load(['transportJob.shipmentRequest', 'truck', 'driver', 'proofOfDelivery', 'locations']))
+            TripResource::make($trip->load([
+                'transportJob.shipmentRequest',
+                'transportJob.quotation',
+                'truck',
+                'driver',
+                'proofOfDelivery',
+                'locations',
+            ]))
         );
     }
 

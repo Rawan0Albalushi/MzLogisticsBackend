@@ -65,4 +65,14 @@ class Quotation extends Model
     {
         return $this->hasOne(Payment::class);
     }
+
+    public function dispatchTruckCount(): int
+    {
+        return max(1, (int) $this->truck_count);
+    }
+
+    public function dispatchTripCount(): int
+    {
+        return max($this->dispatchTruckCount(), max(1, (int) $this->trip_count));
+    }
 }

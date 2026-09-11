@@ -18,7 +18,7 @@ class JobController extends Controller
         $user = $request->user();
 
         $jobs = TransportJob::query()
-            ->with(['customerOrganization', 'providerOrganization', 'shipmentRequest', 'trips'])
+            ->with(['customerOrganization', 'providerOrganization', 'shipmentRequest', 'quotation', 'trips'])
             ->when($user->user_type === UserType::Customer, fn ($q) => $q->where('customer_organization_id', $user->organization_id))
             ->when($user->user_type === UserType::Provider, fn ($q) => $q->where('provider_organization_id', $user->organization_id))
             ->when($user->user_type === UserType::Driver, fn ($q) => $q->whereHas('trips', fn ($trips) => $trips->where('driver_user_id', $user->id)))

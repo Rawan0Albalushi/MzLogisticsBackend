@@ -60,6 +60,49 @@ class ShipmentWorkflowTest extends TestCase
 
         $this->assertSame('pending_dispatch', $accept->json('data.status'));
         $this->assertCount(2, $accept->json('data.trips'));
+        $this->assertDatabaseHas('quotations', [
+            'id' => $quotation->json('data.id'),
+            'truck_count' => 1,
+            'trip_count' => 2,
+        ]);
+    }
+
+    public function test_quoted_truck_count_creates_matching_trips_for_dispatch(): void
+    {
+        [$customer, $provider] = $this->makeCustomerAndProvider();
+
+        $shipment = $this->actingAs($customer, 'sanctum')->postJson('/api/v1/shipments', [
+            'cargo_type' => 'Cement',
+            'weight_tons' => 60,
+            'quantity' => 60,
+            'pickup_address' => 'Sohar Port',
+            'pickup_city' => 'Sohar',
+            'delivery_address' => 'Nizwa',
+            'delivery_city' => 'Nizwa',
+            'required_date' => now()->addDay()->toDateString(),
+            'publish' => true,
+        ])->assertCreated();
+
+        $quotation = $this->actingAs($provider, 'sanctum')->postJson('/api/v1/shipments/'.$shipment->json('data.id').'/quotations', [
+            'total_price' => 1500,
+            'truck_count' => 3,
+            'truck_type' => TruckType::Flatbed->value,
+            'truck_capacity_tons' => 30,
+            'trip_count' => 1,
+            'quantity_per_trip' => 20,
+            'duration_days' => 2,
+        ])->assertCreated();
+
+        $this->assertSame(3, $quotation->json('data.truck_count'));
+        $this->assertSame(3, $quotation->json('data.trip_count'));
+
+        $accept = $this->actingAs($customer, 'sanctum')
+            ->postJson('/api/v1/quotations/'.$quotation->json('data.id').'/accept')
+            ->assertOk();
+
+        $this->assertCount(3, $accept->json('data.trips'));
+        $this->assertEquals(20, (float) $accept->json('data.trips.0.planned_quantity'));
+        $this->assertEquals(20, (float) $accept->json('data.trips.2.planned_quantity'));
         $this->assertDatabaseHas('payments', [
             'quotation_id' => $quotation->json('data.id'),
             'status' => 'completed',
