@@ -242,7 +242,7 @@ class ShipmentWorkflowTest extends TestCase
         $truck = Truck::query()->create([
             'organization_id' => $providerOrg->id,
             'plate_number' => 'T-100',
-            'type' => TruckType::Flatbed,
+            'type' => TruckType::Flatbed->value,
             'capacity_tons' => 30,
             'status' => \App\Enums\TruckStatus::Available,
         ]);

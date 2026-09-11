@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Enums\TruckStatus;
-use App\Enums\TruckType;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -27,7 +26,6 @@ class Truck extends Model
     protected function casts(): array
     {
         return [
-            'type' => TruckType::class,
             'status' => TruckStatus::class,
             'capacity_tons' => 'decimal:2',
             'insurance_expires_at' => 'date',

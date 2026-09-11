@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Services\TruckTypeService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -13,6 +14,7 @@ class TruckResource extends JsonResource
             'id' => $this->id,
             'plate_number' => $this->plate_number,
             'type' => $this->type,
+            'type_label' => app(TruckTypeService::class)->label(is_object($this->type) ? $this->type->value : $this->type),
             'capacity_tons' => $this->capacity_tons,
             'year' => $this->year,
             'make' => $this->make,

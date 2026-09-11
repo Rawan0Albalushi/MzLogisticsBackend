@@ -126,7 +126,7 @@ class DemoDataSeeder extends Seeder
         $truck = Truck::query()->create([
             'organization_id' => $providerOrg->id,
             'plate_number' => 'H 45882',
-            'type' => TruckType::Flatbed,
+            'type' => TruckType::Flatbed->value,
             'capacity_tons' => 30,
             'year' => 2022,
             'make' => 'Mercedes-Benz',
@@ -138,7 +138,7 @@ class DemoDataSeeder extends Seeder
         Truck::query()->create([
             'organization_id' => $providerOrg->id,
             'plate_number' => 'H 77120',
-            'type' => TruckType::Box,
+            'type' => TruckType::Box->value,
             'capacity_tons' => 18,
             'year' => 2021,
             'make' => 'Volvo',

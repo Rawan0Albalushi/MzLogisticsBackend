@@ -26,6 +26,7 @@ class RolePermissionSeeder extends Seeder
                 Permissions::PROVIDERS_VIEW,
                 Permissions::PROVIDERS_VERIFY,
                 Permissions::FLEET_VIEW,
+                Permissions::FLEET_MANAGE,
                 Permissions::DRIVERS_VIEW,
                 Permissions::SHIPMENTS_VIEW,
                 Permissions::SHIPMENTS_MANAGE,

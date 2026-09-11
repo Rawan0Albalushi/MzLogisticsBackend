@@ -2,9 +2,8 @@
 
 namespace App\Http\Requests;
 
-use App\Enums\TruckType;
+use App\Rules\UsableTruckType;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class StoreQuotationRequest extends FormRequest
 {
@@ -19,7 +18,7 @@ class StoreQuotationRequest extends FormRequest
             'total_price' => ['required', 'numeric', 'min:0.001'],
             'currency' => ['nullable', 'string', 'size:3'],
             'truck_count' => ['required', 'integer', 'min:1'],
-            'truck_type' => ['required', Rule::enum(TruckType::class)],
+            'truck_type' => ['required', 'string', 'max:32', new UsableTruckType($this->user())],
             'truck_capacity_tons' => ['required', 'numeric', 'min:0.1'],
             'trip_count' => ['required', 'integer', 'min:1'],
             'quantity_per_trip' => ['required', 'numeric', 'min:0.1'],

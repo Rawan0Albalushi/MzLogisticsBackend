@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\QuotationController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\ShipmentController;
 use App\Http\Controllers\Api\TripController;
+use App\Http\Controllers\Api\TruckTypeController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WalletController;
 use Illuminate\Support\Facades\Route;
@@ -65,6 +66,11 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/trips/{trip}/status', [TripController::class, 'updateStatus']);
         Route::post('/trips/{trip}/location', [TripController::class, 'location']);
         Route::post('/trips/{trip}/pod', [TripController::class, 'storePod']);
+
+        Route::get('/truck-types', [TruckTypeController::class, 'index']);
+        Route::post('/truck-types', [TruckTypeController::class, 'store']);
+        Route::patch('/truck-types/{truck_type}', [TruckTypeController::class, 'update']);
+        Route::delete('/truck-types/{truck_type}', [TruckTypeController::class, 'destroy']);
 
         Route::get('/trucks', [FleetController::class, 'trucks']);
         Route::post('/trucks', [FleetController::class, 'storeTruck']);

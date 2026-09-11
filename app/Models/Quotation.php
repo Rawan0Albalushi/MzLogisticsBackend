@@ -32,7 +32,6 @@ class Quotation extends Model
     {
         return [
             'status' => QuotationStatus::class,
-            'truck_type' => \App\Enums\TruckType::class,
             'total_price' => 'decimal:3',
             'truck_capacity_tons' => 'decimal:2',
             'quantity_per_trip' => 'decimal:2',

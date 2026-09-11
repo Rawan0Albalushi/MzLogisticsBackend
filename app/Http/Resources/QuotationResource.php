@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Services\TruckTypeService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -16,7 +17,8 @@ class QuotationResource extends JsonResource
             'total_price' => $this->total_price,
             'currency' => $this->currency,
             'truck_count' => $this->truck_count,
-            'truck_type' => $this->truck_type,
+            'truck_type' => is_object($this->truck_type) ? $this->truck_type->value : $this->truck_type,
+            'truck_type_label' => app(TruckTypeService::class)->label(is_object($this->truck_type) ? $this->truck_type->value : $this->truck_type),
             'truck_capacity_tons' => $this->truck_capacity_tons,
             'trip_count' => $this->trip_count,
             'quantity_per_trip' => $this->quantity_per_trip,
