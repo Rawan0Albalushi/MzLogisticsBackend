@@ -8,15 +8,21 @@ use App\Http\Controllers\Api\FleetController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OrganizationController;
+use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\PaymentMethodController;
 use App\Http\Controllers\Api\QuotationController;
 use App\Http\Controllers\Api\RoleController;
-use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\ShipmentController;
 use App\Http\Controllers\Api\TripController;
+use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
     Route::get('/catalog', CatalogController::class);
+
+    Route::get('/payments/success', [PaymentController::class, 'success'])->name('payment.success');
+    Route::get('/payments/cancel', [PaymentController::class, 'cancel'])->name('payment.cancel');
+    Route::post('/payments/webhook', [PaymentController::class, 'webhook'])->name('payment.webhook');
 
     Route::prefix('auth')->group(function (): void {
         Route::post('/register/customer', [AuthController::class, 'registerCustomer']);
@@ -74,6 +80,11 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/organizations/{organization}/verify', [OrganizationController::class, 'verify']);
 
         Route::get('/payments', [FinanceController::class, 'payments']);
+        Route::get('/payments/{payment}/status', [PaymentController::class, 'status']);
+        Route::get('/payment-methods', [PaymentMethodController::class, 'index']);
+        Route::post('/payment-methods', [PaymentMethodController::class, 'store']);
+        Route::patch('/payment-methods/{payment_method}', [PaymentMethodController::class, 'update']);
+        Route::delete('/payment-methods/{payment_method}', [PaymentMethodController::class, 'destroy']);
         Route::get('/invoices', [FinanceController::class, 'invoices']);
         Route::get('/settlements', [FinanceController::class, 'settlements']);
         Route::post('/settlements', [FinanceController::class, 'storeSettlement']);

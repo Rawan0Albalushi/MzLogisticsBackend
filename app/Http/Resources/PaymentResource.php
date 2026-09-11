@@ -20,6 +20,7 @@ class PaymentResource extends JsonResource
             'status' => $this->status,
             'gateway' => $this->gateway,
             'gateway_reference' => $this->gateway_reference,
+            'payment_link' => $this->paymentLink(),
             'paid_at' => $this->paid_at,
             'created_at' => $this->created_at,
         ];

@@ -224,7 +224,10 @@ class DemoDataSeeder extends Seeder
             'conditions' => 'Includes loading assistance.',
         ]);
 
-        $job = $jobService->acceptQuotation($customer, $acceptedQuote->fresh());
+        $previousSandbox = config('mz.sandbox_payments');
+        config(['mz.sandbox_payments' => true]);
+        $job = $jobService->acceptQuotation($customer, $acceptedQuote->fresh())->job;
+        config(['mz.sandbox_payments' => $previousSandbox]);
         $trip = $job->trips()->first();
         $tripService->assign($provider, $trip, [
             'truck_id' => $truck->id,

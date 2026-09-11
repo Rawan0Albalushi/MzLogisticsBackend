@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreQuotationRequest;
 use App\Http\Resources\JobResource;
+use App\Http\Resources\PaymentResource;
 use App\Http\Resources\QuotationResource;
 use App\Models\Quotation;
 use App\Models\ShipmentRequest;
@@ -61,15 +62,29 @@ class QuotationController extends Controller
     {
         $this->authorize('accept', $quotation);
         $data = $request->validate([
-            'payment_method' => ['nullable', 'string', 'in:card,bank_transfer,wallet'],
+            'payment_method' => ['nullable', 'string', 'max:32'],
         ]);
 
-        $job = $this->jobs->acceptQuotation(
+        $result = $this->jobs->acceptQuotation(
             $request->user(),
             $quotation,
-            $data['payment_method'] ?? 'card'
+            $data['payment_method'] ?? null,
+            $request->header('X-Payment-Callback-Base'),
         );
 
-        return ApiResponse::success(JobResource::make($job), 'Quotation accepted, payment verified, and job created.');
+        if ($result->requiresCheckout) {
+            return ApiResponse::success([
+                'requires_checkout' => true,
+                'payment_link' => $result->paymentLink,
+                'session_id' => $result->sessionId,
+                'payment' => PaymentResource::make($result->payment)->resolve(),
+                'job' => null,
+            ], 'Complete payment with Thawani to award this quotation.');
+        }
+
+        return ApiResponse::success(
+            JobResource::make($result->job),
+            'Quotation accepted, payment verified, and job created.'
+        );
     }
 }

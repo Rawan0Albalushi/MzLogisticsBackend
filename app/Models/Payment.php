@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'reference',
@@ -57,5 +58,17 @@ class Payment extends Model
     public function invoices(): HasMany
     {
         return $this->hasMany(Invoice::class);
+    }
+
+    public function transportJob(): HasOne
+    {
+        return $this->hasOne(TransportJob::class, 'quotation_id', 'quotation_id');
+    }
+
+    public function paymentLink(): ?string
+    {
+        $payload = $this->gateway_payload ?? [];
+
+        return is_string($payload['payment_link'] ?? null) ? $payload['payment_link'] : null;
     }
 }
