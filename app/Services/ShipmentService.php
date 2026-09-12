@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\QuantityUnit;
 use App\Enums\ShipmentStatus;
 use App\Enums\UserType;
 use App\Models\ShipmentRequest;
@@ -122,13 +123,16 @@ class ShipmentService
      */
     private function attributes(array $payload): array
     {
+        $unit = QuantityUnit::normalize($payload['quantity_unit'] ?? QuantityUnit::Tons->value);
+        $weight = $payload['weight_tons'];
+
         return [
             'cargo_type' => $payload['cargo_type'],
             'cargo_description' => $payload['cargo_description'] ?? null,
-            'weight_tons' => $payload['weight_tons'],
+            'weight_tons' => $weight,
             'volume_cbm' => $payload['volume_cbm'] ?? null,
-            'quantity' => $payload['quantity'],
-            'quantity_unit' => $payload['quantity_unit'] ?? 'ton',
+            'quantity' => $unit === QuantityUnit::Tons ? $weight : $payload['quantity'],
+            'quantity_unit' => $unit->value,
             'pickup_address' => $payload['pickup_address'],
             'pickup_city' => $payload['pickup_city'],
             'pickup_lat' => $payload['pickup_lat'] ?? null,

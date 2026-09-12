@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\QuantityUnit;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -17,7 +18,7 @@ class ShipmentResource extends JsonResource
             'weight_tons' => $this->weight_tons,
             'volume_cbm' => $this->volume_cbm,
             'quantity' => $this->quantity,
-            'quantity_unit' => $this->quantity_unit,
+            'quantity_unit' => QuantityUnit::tryNormalize($this->quantity_unit)?->value ?? $this->quantity_unit,
             'pickup_address' => $this->pickup_address,
             'pickup_city' => $this->pickup_city,
             'pickup_lat' => $this->pickup_lat,

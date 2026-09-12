@@ -3,9 +3,11 @@
 namespace Tests\Feature;
 
 use App\Enums\AccountType;
+use App\Enums\DriverStatus;
 use App\Enums\OrganizationStatus;
 use App\Enums\OrganizationType;
 use App\Enums\TripStatus;
+use App\Enums\TruckStatus;
 use App\Enums\TruckType;
 use App\Enums\UserType;
 use App\Models\DriverProfile;
@@ -26,6 +28,83 @@ class ShipmentWorkflowTest extends TestCase
         parent::setUp();
         $this->seed(RolePermissionSeeder::class);
         $this->seed(PaymentMethodSeeder::class);
+    }
+
+    public function test_ton_quantity_is_synced_to_weight_and_legacy_unit_is_normalized(): void
+    {
+        [$customer] = $this->makeCustomerAndProvider();
+
+        $response = $this->actingAs($customer, 'sanctum')->postJson('/api/v1/shipments', [
+            'cargo_type' => 'Sand',
+            'weight_tons' => 20,
+            'quantity' => 8,
+            'quantity_unit' => 'ton',
+            'pickup_address' => 'Sohar Port',
+            'pickup_city' => 'Sohar',
+            'delivery_address' => 'Nizwa',
+            'delivery_city' => 'Nizwa',
+            'required_date' => now()->addDay()->toDateString(),
+        ])->assertCreated();
+
+        $this->assertSame(20.0, (float) $response->json('data.weight_tons'));
+        $this->assertSame(20.0, (float) $response->json('data.quantity'));
+        $this->assertSame('tons', $response->json('data.quantity_unit'));
+    }
+
+    public function test_missing_quantity_defaults_from_weight_when_unit_is_tons(): void
+    {
+        [$customer] = $this->makeCustomerAndProvider();
+
+        $response = $this->actingAs($customer, 'sanctum')->postJson('/api/v1/shipments', [
+            'cargo_type' => 'Cement',
+            'weight_tons' => 12.5,
+            'pickup_address' => 'Sohar Port',
+            'pickup_city' => 'Sohar',
+            'delivery_address' => 'Nizwa',
+            'delivery_city' => 'Nizwa',
+            'required_date' => now()->addDay()->toDateString(),
+        ])->assertCreated();
+
+        $this->assertSame(12.5, (float) $response->json('data.quantity'));
+        $this->assertSame('tons', $response->json('data.quantity_unit'));
+    }
+
+    public function test_pallet_quantity_stays_independent_from_weight(): void
+    {
+        [$customer] = $this->makeCustomerAndProvider();
+
+        $response = $this->actingAs($customer, 'sanctum')->postJson('/api/v1/shipments', [
+            'cargo_type' => 'Packaged food',
+            'weight_tons' => 16,
+            'quantity' => 24,
+            'quantity_unit' => 'pallets',
+            'pickup_address' => 'Rusayl',
+            'pickup_city' => 'Muscat',
+            'delivery_address' => 'Nizwa Central Market',
+            'delivery_city' => 'Nizwa',
+            'required_date' => now()->addDay()->toDateString(),
+        ])->assertCreated();
+
+        $this->assertSame(16.0, (float) $response->json('data.weight_tons'));
+        $this->assertSame(24.0, (float) $response->json('data.quantity'));
+        $this->assertSame('pallets', $response->json('data.quantity_unit'));
+    }
+
+    public function test_unsupported_quantity_unit_is_rejected(): void
+    {
+        [$customer] = $this->makeCustomerAndProvider();
+
+        $this->actingAs($customer, 'sanctum')->postJson('/api/v1/shipments', [
+            'cargo_type' => 'General cargo',
+            'weight_tons' => 10,
+            'quantity' => 3,
+            'quantity_unit' => 'loads',
+            'pickup_address' => 'Sohar Port',
+            'pickup_city' => 'Sohar',
+            'delivery_address' => 'Nizwa',
+            'delivery_city' => 'Nizwa',
+            'required_date' => now()->addDay()->toDateString(),
+        ])->assertUnprocessable()->assertJsonValidationErrors(['quantity_unit']);
     }
 
     public function test_quotation_acceptance_creates_job_and_trips(): void
@@ -237,14 +316,14 @@ class ShipmentWorkflowTest extends TestCase
         DriverProfile::query()->create([
             'user_id' => $driver->id,
             'organization_id' => $providerOrg->id,
-            'status' => \App\Enums\DriverStatus::Available,
+            'status' => DriverStatus::Available,
         ]);
         $truck = Truck::query()->create([
             'organization_id' => $providerOrg->id,
             'plate_number' => 'T-100',
             'type' => TruckType::Flatbed->value,
             'capacity_tons' => 30,
-            'status' => \App\Enums\TruckStatus::Available,
+            'status' => TruckStatus::Available,
         ]);
 
         return [$customer, $provider, $driver, $truck];
