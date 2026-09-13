@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
 use App\Models\TransportJob;
 use App\Support\ApiResponse;
+use App\Support\ListFilters;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -23,6 +24,19 @@ class JobController extends Controller
             ->when($user->user_type === UserType::Provider, fn ($q) => $q->where('provider_organization_id', $user->organization_id))
             ->when($user->user_type === UserType::Driver, fn ($q) => $q->whereHas('trips', fn ($trips) => $trips->where('driver_user_id', $user->id)))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
+            ->when($request->filled('search'), function ($q) use ($request) {
+                ListFilters::search(
+                    $q,
+                    $request->string('search')->toString(),
+                    ['reference'],
+                    [
+                        'customerOrganization' => ['name', 'name_ar', 'email'],
+                        'providerOrganization' => ['name', 'name_ar'],
+                        'shipmentRequest' => ['reference', 'pickup_city', 'delivery_city'],
+                    ],
+                );
+            })
+            ->tap(fn ($q) => ListFilters::dateRange($q, $request->all(), 'created_at'))
             ->latest()
             ->paginate((int) $request->integer('per_page', 15));
 

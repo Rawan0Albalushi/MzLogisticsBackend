@@ -9,6 +9,7 @@ use App\Http\Resources\OrganizationResource;
 use App\Models\Organization;
 use App\Support\ApiResponse;
 use App\Support\AuditLogger;
+use App\Support\ListFilters;
 use App\Support\Permissions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,13 +32,14 @@ class OrganizationController extends Controller
                 }
             })
             ->when($request->filled('search'), function ($q) use ($request) {
-                $search = $request->string('search');
-                $q->where(function ($builder) use ($search) {
-                    $builder->where('name', 'like', "%{$search}%")
-                        ->orWhere('name_ar', 'like', "%{$search}%")
-                        ->orWhere('email', 'like', "%{$search}%");
-                });
+                ListFilters::search(
+                    $q,
+                    $request->string('search')->toString(),
+                    ['name', 'name_ar', 'email', 'phone', 'city', 'commercial_register'],
+                );
             })
+            ->when($request->filled('city'), fn ($q) => ListFilters::city($q, $request->string('city')->toString()))
+            ->tap(fn ($q) => ListFilters::dateRange($q, $request->all(), 'created_at'))
             ->latest()
             ->paginate((int) $request->integer('per_page', 15));
 
@@ -53,12 +55,14 @@ class OrganizationController extends Controller
             ->withCount(['trucks', 'driverProfiles', 'providerJobs'])
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($request->filled('search'), function ($q) use ($request) {
-                $search = $request->string('search');
-                $q->where(function ($builder) use ($search) {
-                    $builder->where('name', 'like', "%{$search}%")
-                        ->orWhere('commercial_register', 'like', "%{$search}%");
-                });
+                ListFilters::search(
+                    $q,
+                    $request->string('search')->toString(),
+                    ['name', 'name_ar', 'commercial_register', 'email', 'phone', 'city'],
+                );
             })
+            ->when($request->filled('city'), fn ($q) => ListFilters::city($q, $request->string('city')->toString()))
+            ->tap(fn ($q) => ListFilters::dateRange($q, $request->all(), 'created_at'))
             ->latest()
             ->paginate((int) $request->integer('per_page', 15));
 

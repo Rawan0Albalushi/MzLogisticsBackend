@@ -111,6 +111,20 @@ class QuotationService
             $query->where('status', $filters['status']);
         }
 
+        if (! empty($filters['search'])) {
+            \App\Support\ListFilters::search(
+                $query,
+                $filters['search'],
+                ['reference'],
+                [
+                    'shipmentRequest' => ['reference', 'pickup_city', 'delivery_city', 'cargo_type'],
+                    'providerOrganization' => ['name', 'name_ar'],
+                ],
+            );
+        }
+
+        \App\Support\ListFilters::dateRange($query, $filters, 'created_at');
+
         return $query->paginate((int) ($filters['per_page'] ?? 15));
     }
 }

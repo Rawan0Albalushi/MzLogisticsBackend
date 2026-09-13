@@ -264,6 +264,25 @@ class TripService
             $query->where('status', $filters['status']);
         }
 
+        if (! empty($filters['search'])) {
+            \App\Support\ListFilters::search(
+                $query,
+                $filters['search'],
+                ['reference', 'pickup_city', 'delivery_city'],
+                [
+                    'transportJob' => ['reference'],
+                    'driver' => ['name', 'email', 'phone'],
+                    'truck' => ['plate_number', 'make', 'model'],
+                ],
+            );
+        }
+
+        if (! empty($filters['city'])) {
+            \App\Support\ListFilters::city($query, $filters['city'], ['pickup_city', 'delivery_city']);
+        }
+
+        \App\Support\ListFilters::dateRange($query, $filters, 'created_at');
+
         return $query->paginate((int) ($filters['per_page'] ?? 15));
     }
 

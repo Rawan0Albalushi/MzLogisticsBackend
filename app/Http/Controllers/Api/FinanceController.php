@@ -10,6 +10,7 @@ use App\Models\Payment;
 use App\Models\Settlement;
 use App\Services\SettlementService;
 use App\Support\ApiResponse;
+use App\Support\ListFilters;
 use App\Support\Permissions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,6 +29,16 @@ class FinanceController extends Controller
             ->when($user->isCustomer(), fn ($q) => $q->where('payer_organization_id', $user->organization_id))
             ->when($user->isProvider(), fn ($q) => $q->whereHas('quotation', fn ($quotation) => $quotation->where('provider_organization_id', $user->organization_id)))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
+            ->when($request->filled('method'), fn ($q) => $q->where('method', $request->string('method')))
+            ->when($request->filled('search'), function ($q) use ($request) {
+                ListFilters::search(
+                    $q,
+                    $request->string('search')->toString(),
+                    ['reference', 'method', 'gateway'],
+                    ['payerOrganization' => ['name', 'name_ar']],
+                );
+            })
+            ->tap(fn ($q) => ListFilters::dateRange($q, $request->all(), 'created_at'))
             ->latest()
             ->paginate((int) $request->integer('per_page', 15));
 
@@ -44,6 +55,15 @@ class FinanceController extends Controller
             ->when(! $user->isPlatform(), fn ($q) => $q->where('organization_id', $user->organization_id))
             ->when($request->filled('type'), fn ($q) => $q->where('type', $request->string('type')))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
+            ->when($request->filled('search'), function ($q) use ($request) {
+                ListFilters::search(
+                    $q,
+                    $request->string('search')->toString(),
+                    ['reference'],
+                    ['organization' => ['name', 'name_ar']],
+                );
+            })
+            ->tap(fn ($q) => ListFilters::dateRange($q, $request->all(), 'issued_at'))
             ->latest()
             ->paginate((int) $request->integer('per_page', 15));
 
@@ -59,6 +79,15 @@ class FinanceController extends Controller
             ->with('providerOrganization')
             ->when($user->isProvider(), fn ($q) => $q->where('provider_organization_id', $user->organization_id))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
+            ->when($request->filled('search'), function ($q) use ($request) {
+                ListFilters::search(
+                    $q,
+                    $request->string('search')->toString(),
+                    ['reference'],
+                    ['providerOrganization' => ['name', 'name_ar']],
+                );
+            })
+            ->tap(fn ($q) => ListFilters::dateRange($q, $request->all(), 'period_start'))
             ->latest()
             ->paginate((int) $request->integer('per_page', 15));
 

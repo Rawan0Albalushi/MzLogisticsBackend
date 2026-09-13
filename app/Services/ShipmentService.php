@@ -105,14 +105,19 @@ class ShipmentService
         }
 
         if (! empty($filters['search'])) {
-            $search = $filters['search'];
-            $query->where(function ($builder) use ($search) {
-                $builder->where('reference', 'like', "%{$search}%")
-                    ->orWhere('cargo_type', 'like', "%{$search}%")
-                    ->orWhere('pickup_city', 'like', "%{$search}%")
-                    ->orWhere('delivery_city', 'like', "%{$search}%");
-            });
+            \App\Support\ListFilters::search(
+                $query,
+                $filters['search'],
+                ['reference', 'cargo_type', 'pickup_city', 'delivery_city'],
+                ['customerOrganization' => ['name', 'name_ar', 'email']],
+            );
         }
+
+        if (! empty($filters['city'])) {
+            \App\Support\ListFilters::city($query, $filters['city'], ['pickup_city', 'delivery_city']);
+        }
+
+        \App\Support\ListFilters::dateRange($query, $filters, 'required_date');
 
         return $query->paginate((int) ($filters['per_page'] ?? 15));
     }

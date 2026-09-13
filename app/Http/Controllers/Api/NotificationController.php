@@ -13,6 +13,8 @@ class NotificationController extends Controller
     {
         $notifications = $request->user()
             ->notifications()
+            ->when($request->string('status')->toString() === 'unread', fn ($query) => $query->whereNull('read_at'))
+            ->when($request->string('status')->toString() === 'read', fn ($query) => $query->whereNotNull('read_at'))
             ->paginate((int) $request->integer('per_page', 20));
 
         return ApiResponse::success($notifications);

@@ -13,6 +13,7 @@ use App\Models\Equipment;
 use App\Models\Truck;
 use App\Models\User;
 use App\Support\ApiResponse;
+use App\Support\ListFilters;
 use App\Support\Permissions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,6 +29,18 @@ class FleetController extends Controller
             ->with(['assignedDriver', 'organization'])
             ->when(! $request->user()->isPlatform(), fn ($q) => $q->where('organization_id', $request->user()->organization_id))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
+            ->when($request->filled('organization_id') && $request->user()->isPlatform(), fn ($q) => $q->where('organization_id', $request->integer('organization_id')))
+            ->when($request->filled('search'), function ($q) use ($request) {
+                ListFilters::search(
+                    $q,
+                    $request->string('search')->toString(),
+                    ['plate_number', 'make', 'model', 'type'],
+                    [
+                        'organization' => ['name', 'name_ar'],
+                        'assignedDriver' => ['name'],
+                    ],
+                );
+            })
             ->latest()
             ->paginate((int) $request->integer('per_page', 15));
 
@@ -61,6 +74,10 @@ class FleetController extends Controller
         $this->authorizePermission($request, Permissions::FLEET_VIEW);
         $items = Equipment::query()
             ->when(! $request->user()->isPlatform(), fn ($q) => $q->where('organization_id', $request->user()->organization_id))
+            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
+            ->when($request->filled('search'), function ($q) use ($request) {
+                ListFilters::search($q, $request->string('search')->toString(), ['name', 'type']);
+            })
             ->latest()
             ->paginate((int) $request->integer('per_page', 15));
 
@@ -90,12 +107,15 @@ class FleetController extends Controller
             ->with('driverProfile')
             ->when(! $request->user()->isPlatform(), fn ($q) => $q->where('organization_id', $request->user()->organization_id))
             ->when($request->filled('search'), function ($q) use ($request) {
-                $search = $request->string('search')->toString();
-                $q->where(function ($builder) use ($search) {
-                    $builder->where('name', 'like', "%{$search}%")
-                        ->orWhere('email', 'like', "%{$search}%")
-                        ->orWhere('phone', 'like', "%{$search}%");
-                });
+                ListFilters::search(
+                    $q,
+                    $request->string('search')->toString(),
+                    ['name', 'email', 'phone'],
+                    ['driverProfile' => ['license_number']],
+                );
+            })
+            ->when($request->filled('status'), function ($q) use ($request) {
+                $q->whereHas('driverProfile', fn ($profile) => $profile->where('status', $request->string('status')));
             })
             ->latest()
             ->paginate((int) $request->integer('per_page', 15));

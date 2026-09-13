@@ -8,6 +8,7 @@ use App\Http\Resources\WalletTransactionResource;
 use App\Models\Wallet;
 use App\Services\WalletLedgerService;
 use App\Support\ApiResponse;
+use App\Support\ListFilters;
 use App\Support\Permissions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -32,6 +33,11 @@ class WalletController extends Controller
                 $user->isPlatform() && $request->filled('organization_id'),
                 fn ($query) => $query->where('organization_id', $request->integer('organization_id'))
             )
+            ->when($request->filled('search'), function ($query) use ($request) {
+                ListFilters::search($query, $request->string('search')->toString(), [], [
+                    'organization' => ['name', 'name_ar', 'email', 'commercial_register'],
+                ]);
+            })
             ->latest()
             ->paginate((int) $request->integer('per_page', 15));
 
@@ -51,6 +57,19 @@ class WalletController extends Controller
 
         $items = $wallet->transactions()
             ->with(['payment', 'transportJob'])
+            ->when($request->filled('type'), fn ($query) => $query->where('type', $request->string('type')))
+            ->when($request->filled('search'), function ($query) use ($request) {
+                ListFilters::search(
+                    $query,
+                    $request->string('search')->toString(),
+                    ['reference'],
+                    [
+                        'payment' => ['reference'],
+                        'transportJob' => ['reference'],
+                    ],
+                );
+            })
+            ->tap(fn ($query) => ListFilters::dateRange($query, $request->all(), 'created_at'))
             ->paginate((int) $request->integer('per_page', 15));
 
         return ApiResponse::success(WalletTransactionResource::collection($items));
