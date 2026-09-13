@@ -51,6 +51,47 @@ class ShipmentWorkflowTest extends TestCase
         $this->assertSame('tons', $response->json('data.quantity_unit'));
     }
 
+    public function test_pickup_and_delivery_coordinates_are_persisted(): void
+    {
+        [$customer] = $this->makeCustomerAndProvider();
+
+        $response = $this->actingAs($customer, 'sanctum')->postJson('/api/v1/shipments', [
+            'cargo_type' => 'Steel',
+            'weight_tons' => 18,
+            'pickup_address' => 'Sohar Port',
+            'pickup_city' => 'Sohar',
+            'pickup_lat' => 24.3820123,
+            'pickup_lng' => 56.7396456,
+            'delivery_address' => 'Nizwa Central Market',
+            'delivery_city' => 'Nizwa',
+            'delivery_lat' => 22.9333001,
+            'delivery_lng' => 57.5333002,
+            'required_date' => now()->addDay()->toDateString(),
+        ])->assertCreated();
+
+        $this->assertEqualsWithDelta(24.3820123, (float) $response->json('data.pickup_lat'), 0.0000001);
+        $this->assertEqualsWithDelta(56.7396456, (float) $response->json('data.pickup_lng'), 0.0000001);
+        $this->assertEqualsWithDelta(22.9333001, (float) $response->json('data.delivery_lat'), 0.0000001);
+        $this->assertEqualsWithDelta(57.5333002, (float) $response->json('data.delivery_lng'), 0.0000001);
+    }
+
+    public function test_partial_coordinates_are_rejected(): void
+    {
+        [$customer] = $this->makeCustomerAndProvider();
+
+        $this->actingAs($customer, 'sanctum')->postJson('/api/v1/shipments', [
+            'cargo_type' => 'Steel',
+            'weight_tons' => 18,
+            'pickup_address' => 'Sohar Port',
+            'pickup_city' => 'Sohar',
+            'pickup_lat' => 24.3820,
+            'delivery_address' => 'Nizwa',
+            'delivery_city' => 'Nizwa',
+            'required_date' => now()->addDay()->toDateString(),
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['pickup_lng']);
+    }
+
     public function test_missing_quantity_defaults_from_weight_when_unit_is_tons(): void
     {
         [$customer] = $this->makeCustomerAndProvider();

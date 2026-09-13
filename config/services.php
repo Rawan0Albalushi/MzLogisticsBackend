@@ -35,4 +35,11 @@ return [
         ],
     ],
 
+    'google_maps' => [
+        'key' => env('GOOGLE_MAPS_API_KEY'),
+        'default_lat' => (float) env('GOOGLE_MAPS_DEFAULT_LAT', 23.5880),
+        'default_lng' => (float) env('GOOGLE_MAPS_DEFAULT_LNG', 58.3829),
+        'bias_radius_meters' => (int) env('GOOGLE_MAPS_BIAS_RADIUS', 400000),
+    ],
+
 ];

@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PaymentMethodController;
+use App\Http\Controllers\Api\PlacesController;
 use App\Http\Controllers\Api\QuotationController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\ShipmentController;
@@ -43,6 +44,10 @@ Route::prefix('v1')->group(function (): void {
         });
 
         Route::get('/dashboard', DashboardController::class);
+
+        Route::get('/places/autocomplete', [PlacesController::class, 'autocomplete']);
+        Route::get('/places/details', [PlacesController::class, 'details']);
+        Route::get('/places/reverse', [PlacesController::class, 'reverse']);
 
         Route::get('/shipments', [ShipmentController::class, 'index']);
         Route::post('/shipments', [ShipmentController::class, 'store']);
