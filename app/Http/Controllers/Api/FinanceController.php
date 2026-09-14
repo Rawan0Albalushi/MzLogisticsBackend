@@ -76,7 +76,7 @@ class FinanceController extends Controller
         $user = $request->user();
 
         $items = Settlement::query()
-            ->with('providerOrganization')
+            ->with(['providerOrganization', 'requester:id,name'])
             ->when($user->isProvider(), fn ($q) => $q->where('provider_organization_id', $user->organization_id))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($request->filled('search'), function ($q) use ($request) {
@@ -96,7 +96,7 @@ class FinanceController extends Controller
 
     public function storeSettlement(Request $request): JsonResponse
     {
-        abort_unless($request->user()->can(Permissions::SETTLEMENTS_MANAGE), 403);
+        abort_unless($request->user()->isPlatform() && $request->user()->can(Permissions::SETTLEMENTS_MANAGE), 403);
         $data = $request->validate([
             'provider_organization_id' => ['required', 'exists:organizations,id'],
             'amount' => ['required', 'numeric', 'min:0.001'],
@@ -109,9 +109,23 @@ class FinanceController extends Controller
         return ApiResponse::success($settlement, 'Settlement created.', 201);
     }
 
+    public function requestSettlement(Request $request): JsonResponse
+    {
+        abort_unless($request->user()->isProvider() && $request->user()->can(Permissions::SETTLEMENTS_REQUEST), 403);
+        $data = $request->validate([
+            'amount' => ['required', 'numeric', 'min:0.001'],
+            'period_start' => ['nullable', 'date'],
+            'period_end' => ['nullable', 'date', 'after_or_equal:period_start'],
+        ]);
+
+        $settlement = $this->settlements->request($request->user(), $data);
+
+        return ApiResponse::success($settlement, 'Withdrawal requested.', 201);
+    }
+
     public function completeSettlement(Request $request, Settlement $settlement): JsonResponse
     {
-        abort_unless($request->user()->can(Permissions::SETTLEMENTS_MANAGE), 403);
+        abort_unless($request->user()->isPlatform() && $request->user()->can(Permissions::SETTLEMENTS_MANAGE), 403);
 
         return ApiResponse::success($this->settlements->complete($request->user(), $settlement), 'Settlement completed.');
     }

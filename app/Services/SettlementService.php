@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Enums\OrganizationStatus;
 use App\Enums\OrganizationType;
+use App\Enums\SettlementSource;
 use App\Enums\SettlementStatus;
 use App\Models\Organization;
 use App\Models\Settlement;
@@ -17,7 +19,44 @@ class SettlementService
     public function __construct(private readonly WalletLedgerService $ledger) {}
 
     /**
-     * @param  array{provider_organization_id: int, amount: float|int|string, period_start: string, period_end: string}  $data
+     * @param  array{amount: float|int|string, period_start?: string, period_end?: string}  $data
+     */
+    public function request(User $user, array $data): Settlement
+    {
+        if (! $user->isProvider() || ! $user->organization_id) {
+            throw ValidationException::withMessages([
+                'amount' => ['Only service providers can request a wallet withdrawal.'],
+            ]);
+        }
+
+        $organization = Organization::query()
+            ->whereKey($user->organization_id)
+            ->where('type', OrganizationType::Provider)
+            ->first();
+
+        if (! $organization) {
+            throw ValidationException::withMessages([
+                'amount' => ['A provider company is required to request a withdrawal.'],
+            ]);
+        }
+
+        if ($organization->status !== OrganizationStatus::Active) {
+            throw ValidationException::withMessages([
+                'amount' => ['The company account must be active before requesting a payout.'],
+            ]);
+        }
+
+        return $this->create($user, [
+            'provider_organization_id' => $organization->id,
+            'amount' => $data['amount'],
+            'period_start' => $data['period_start'] ?? now()->startOfMonth()->toDateString(),
+            'period_end' => $data['period_end'] ?? now()->toDateString(),
+            'source' => SettlementSource::Provider,
+        ]);
+    }
+
+    /**
+     * @param  array{provider_organization_id: int, amount: float|int|string, period_start: string, period_end: string, source?: SettlementSource|string}  $data
      */
     public function create(User $user, array $data): Settlement
     {
@@ -34,6 +73,11 @@ class SettlementService
                 ]);
             }
 
+            $source = $data['source'] ?? SettlementSource::Platform;
+            if (! $source instanceof SettlementSource) {
+                $source = SettlementSource::tryFrom((string) $source) ?? SettlementSource::Platform;
+            }
+
             $settlement = Settlement::query()->create([
                 'reference' => ReferenceGenerator::next('STL', Settlement::class),
                 'provider_organization_id' => $organization->id,
@@ -42,14 +86,22 @@ class SettlementService
                 'net_amount' => $payout,
                 'currency' => config('mz.currency'),
                 'status' => SettlementStatus::Pending,
+                'source' => $source,
+                'requested_by' => $user->id,
                 'period_start' => $data['period_start'],
                 'period_end' => $data['period_end'],
             ]);
 
             $this->ledger->reservePayout($organization, $payout, $settlement, $user);
-            AuditLogger::record('settlement.created', $settlement, [], $settlement->toArray(), $user);
+            AuditLogger::record(
+                $source === SettlementSource::Provider ? 'settlement.requested' : 'settlement.created',
+                $settlement,
+                [],
+                $settlement->toArray(),
+                $user,
+            );
 
-            return $settlement->fresh('providerOrganization');
+            return $settlement->fresh(['providerOrganization', 'requester:id,name']);
         });
     }
 
@@ -73,7 +125,7 @@ class SettlementService
 
             AuditLogger::record('settlement.completed', $settlement, [], ['status' => $settlement->status->value], $user);
 
-            return $settlement->fresh('providerOrganization');
+            return $settlement->fresh(['providerOrganization', 'requester:id,name']);
         });
     }
 }

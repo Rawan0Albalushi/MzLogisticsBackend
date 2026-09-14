@@ -199,6 +199,84 @@ class WalletLedgerTest extends TestCase
             ->assertJsonValidationErrors(['amount']);
     }
 
+    public function test_provider_can_request_withdrawal_from_own_wallet(): void
+    {
+        [$customer, $provider, $driver, $truck] = $this->makeCustomerAndProvider(true);
+        $this->completePaidJob($customer, $provider, $driver, $truck, 500);
+
+        $create = $this->actingAs($provider, 'sanctum')
+            ->postJson('/api/v1/settlements/request', ['amount' => 200])
+            ->assertCreated();
+
+        $this->assertEquals(200.0, (float) $create->json('data.amount'));
+        $this->assertEquals(200.0, (float) $create->json('data.net_amount'));
+        $this->assertSame('provider', $create->json('data.source'));
+        $this->assertSame($provider->id, $create->json('data.requested_by'));
+        $this->assertSame('pending', $create->json('data.status'));
+
+        $wallet = Wallet::query()->where('organization_id', $provider->organization_id)->firstOrFail();
+        $this->assertEquals(250.0, (float) $wallet->available_balance);
+        $this->assertEquals(200.0, (float) $wallet->reserved_balance);
+        $this->assertSame(1, WalletTransaction::query()->where('type', WalletTransactionType::PayoutReserved)->count());
+    }
+
+    public function test_provider_cannot_request_more_than_available_wallet_balance(): void
+    {
+        [$customer, $provider, $driver, $truck] = $this->makeCustomerAndProvider(true);
+        $this->completePaidJob($customer, $provider, $driver, $truck, 500);
+
+        $this->actingAs($provider, 'sanctum')
+            ->postJson('/api/v1/settlements/request', ['amount' => 451])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['amount']);
+    }
+
+    public function test_provider_cannot_create_or_complete_settlements_for_other_organizations(): void
+    {
+        [$customer, $provider, $driver, $truck] = $this->makeCustomerAndProvider(true);
+        $this->completePaidJob($customer, $provider, $driver, $truck, 500);
+
+        $this->actingAs($provider, 'sanctum')
+            ->postJson('/api/v1/settlements', [
+                'provider_organization_id' => $provider->organization_id,
+                'amount' => 200,
+                'period_start' => now()->startOfMonth()->toDateString(),
+                'period_end' => now()->toDateString(),
+            ])
+            ->assertForbidden();
+
+        $admin = User::factory()->create(['user_type' => UserType::Platform]);
+        $admin->assignRole(StaffRoles::SUPER_ADMIN);
+        $settlementId = $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/settlements', [
+                'provider_organization_id' => $provider->organization_id,
+                'amount' => 200,
+                'period_start' => now()->startOfMonth()->toDateString(),
+                'period_end' => now()->toDateString(),
+            ])
+            ->json('data.id');
+
+        $this->actingAs($provider, 'sanctum')
+            ->postJson('/api/v1/settlements/'.$settlementId.'/complete')
+            ->assertForbidden();
+    }
+
+    public function test_provider_without_request_permission_cannot_request_withdrawal(): void
+    {
+        [$customer, $provider, $driver, $truck] = $this->makeCustomerAndProvider(true);
+        $this->completePaidJob($customer, $provider, $driver, $truck, 500);
+
+        $viewer = User::factory()->create([
+            'user_type' => UserType::Provider,
+            'organization_id' => $provider->organization_id,
+        ]);
+        $viewer->assignRole('Viewer');
+
+        $this->actingAs($viewer, 'sanctum')
+            ->postJson('/api/v1/settlements/request', ['amount' => 100])
+            ->assertForbidden();
+    }
+
     private function completePaidJob(User $customer, User $provider, User $driver, Truck $truck, float $totalPrice): void
     {
         $quotationId = $this->createAwardedQuotation($customer, $provider, $totalPrice);

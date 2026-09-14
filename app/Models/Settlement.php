@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\SettlementSource;
 use App\Enums\SettlementStatus;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
@@ -15,6 +16,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'net_amount',
     'currency',
     'status',
+    'source',
+    'requested_by',
     'period_start',
     'period_end',
     'settled_at',
@@ -25,6 +28,7 @@ class Settlement extends Model
     {
         return [
             'status' => SettlementStatus::class,
+            'source' => SettlementSource::class,
             'amount' => 'decimal:3',
             'commission_amount' => 'decimal:3',
             'net_amount' => 'decimal:3',
@@ -37,5 +41,10 @@ class Settlement extends Model
     public function providerOrganization(): BelongsTo
     {
         return $this->belongsTo(Organization::class, 'provider_organization_id');
+    }
+
+    public function requester(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'requested_by');
     }
 }

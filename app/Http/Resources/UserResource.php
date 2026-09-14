@@ -20,6 +20,10 @@ class UserResource extends JsonResource
             'organization_id' => $this->organization_id,
             'organization' => OrganizationResource::make($this->whenLoaded('organization')),
             'roles' => $this->whenLoaded('roles', fn () => $this->roles->pluck('name')),
+            'role_labels' => $this->whenLoaded(
+                'roles',
+                fn () => $this->roles->map(fn ($role) => $role instanceof \App\Models\Role ? $role->label() : $role->name)->values()
+            ),
             'permissions' => $this->when(
                 $this->relationLoaded('roles') || $this->relationLoaded('permissions'),
                 fn () => $this->getAllPermissions()->pluck('name')->values()

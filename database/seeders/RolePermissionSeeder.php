@@ -2,10 +2,11 @@
 
 namespace Database\Seeders;
 
+use App\Models\Role;
 use App\Support\Permissions;
+use App\Support\StaffRoles;
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Permission;
-use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
 class RolePermissionSeeder extends Seeder
@@ -134,6 +135,7 @@ class RolePermissionSeeder extends Seeder
                 Permissions::DASHBOARD_VIEW,
                 Permissions::COMPANY_MANAGE,
                 Permissions::USERS_MANAGE,
+                Permissions::ROLES_MANAGE,
                 Permissions::FLEET_VIEW,
                 Permissions::FLEET_MANAGE,
                 Permissions::DRIVERS_VIEW,
@@ -152,6 +154,7 @@ class RolePermissionSeeder extends Seeder
                 Permissions::PAYMENTS_VIEW,
                 Permissions::INVOICES_VIEW,
                 Permissions::SETTLEMENTS_VIEW,
+                Permissions::SETTLEMENTS_REQUEST,
                 Permissions::WALLETS_VIEW,
             ],
             'Operations' => [
@@ -191,6 +194,7 @@ class RolePermissionSeeder extends Seeder
                 Permissions::PAYMENTS_VIEW,
                 Permissions::INVOICES_VIEW,
                 Permissions::SETTLEMENTS_VIEW,
+                Permissions::SETTLEMENTS_REQUEST,
                 Permissions::WALLETS_VIEW,
             ],
             'Viewer' => [
@@ -211,6 +215,12 @@ class RolePermissionSeeder extends Seeder
 
         foreach ($roles as $name => $permissions) {
             $role = Role::findOrCreate($name, 'web');
+            $role->fill([
+                'display_name' => $name,
+                'scope' => StaffRoles::scopeOf($name),
+                'organization_id' => null,
+                'is_system' => true,
+            ])->save();
             $role->syncPermissions($permissions);
         }
     }

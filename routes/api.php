@@ -101,6 +101,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/invoices', [FinanceController::class, 'invoices']);
         Route::get('/settlements', [FinanceController::class, 'settlements']);
         Route::post('/settlements', [FinanceController::class, 'storeSettlement']);
+        Route::post('/settlements/request', [FinanceController::class, 'requestSettlement']);
         Route::post('/settlements/{settlement}/complete', [FinanceController::class, 'completeSettlement']);
         Route::get('/wallets', [WalletController::class, 'index']);
         Route::get('/wallets/{wallet}', [WalletController::class, 'show']);
@@ -113,7 +114,9 @@ Route::prefix('v1')->group(function (): void {
         Route::patch('/users/{user}/password', [UserController::class, 'updatePassword']);
 
         Route::get('/roles', [RoleController::class, 'index']);
+        Route::post('/roles', [RoleController::class, 'store']);
         Route::patch('/roles/{role}', [RoleController::class, 'update'])->where('role', '.*');
+        Route::delete('/roles/{role}', [RoleController::class, 'destroy'])->where('role', '.*');
 
         Route::get('/notifications', [NotificationController::class, 'index']);
         Route::post('/notifications/{notification}/read', [NotificationController::class, 'markRead']);
