@@ -7,14 +7,13 @@ use App\Enums\JobStatus;
 use App\Enums\TripStatus;
 use App\Enums\TruckStatus;
 use App\Enums\UserType;
-use App\Models\DriverProfile;
 use App\Models\ProofOfDelivery;
-use App\Models\TransportJob;
 use App\Models\Trip;
 use App\Models\TripLocation;
 use App\Models\Truck;
 use App\Models\User;
 use App\Support\AuditLogger;
+use App\Support\ListFilters;
 use App\Support\ReferenceGenerator;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
@@ -23,7 +22,10 @@ use Illuminate\Validation\ValidationException;
 
 class TripService
 {
-    public function __construct(private readonly WalletLedgerService $walletLedger) {}
+    public function __construct(
+        private readonly WalletLedgerService $walletLedger,
+        private readonly JobOrchestrationService $jobs,
+    ) {}
 
     /**
      * @param  array{truck_id: int, driver_id: int}  $payload
@@ -265,7 +267,7 @@ class TripService
         }
 
         if (! empty($filters['search'])) {
-            \App\Support\ListFilters::search(
+            ListFilters::search(
                 $query,
                 $filters['search'],
                 ['reference', 'pickup_city', 'delivery_city'],
@@ -278,10 +280,10 @@ class TripService
         }
 
         if (! empty($filters['city'])) {
-            \App\Support\ListFilters::city($query, $filters['city'], ['pickup_city', 'delivery_city']);
+            ListFilters::city($query, $filters['city'], ['pickup_city', 'delivery_city']);
         }
 
-        \App\Support\ListFilters::dateRange($query, $filters, 'created_at');
+        ListFilters::dateRange($query, $filters, 'created_at');
 
         return $query->paginate((int) ($filters['per_page'] ?? 15));
     }
@@ -293,6 +295,7 @@ class TripService
         $job = $trip->transportJob;
         $delivered = (float) $job->trips()->sum('delivered_quantity');
         $job->forceFill(['delivered_quantity' => $delivered])->save();
+        $this->jobs->openDeliveredTripInvoice($trip);
 
         $allComplete = $job->trips->every(fn (Trip $item) => in_array($item->status, [TripStatus::Completed, TripStatus::Cancelled], true));
         if ($allComplete) {
@@ -301,6 +304,7 @@ class TripService
                 'completed_at' => now(),
             ])->save();
             $this->walletLedger->releaseCompletedJob($job->fresh());
+            $this->jobs->openDeferredInvoices($job->fresh());
             AuditLogger::record('job.completed', $job);
         }
 

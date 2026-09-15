@@ -82,9 +82,13 @@ class QuotationController extends Controller
             ], 'Complete payment with Thawani to award this quotation.');
         }
 
+        $message = $result->paymentDeferred
+            ? 'Quotation accepted and job created. Payment is due after delivery.'
+            : 'Quotation accepted, payment verified, and job created.';
+
         return ApiResponse::success(
             JobResource::make($result->job),
-            'Quotation accepted, payment verified, and job created.'
+            $message
         );
     }
 }

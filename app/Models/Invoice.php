@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'reference',
     'organization_id',
     'transport_job_id',
+    'trip_id',
     'payment_id',
     'type',
     'amount',
@@ -43,8 +44,20 @@ class Invoice extends Model
         return $this->belongsTo(TransportJob::class);
     }
 
+    public function trip(): BelongsTo
+    {
+        return $this->belongsTo(Trip::class);
+    }
+
     public function payment(): BelongsTo
     {
         return $this->belongsTo(Payment::class);
+    }
+
+    public function isPayable(): bool
+    {
+        return $this->type === InvoiceType::Customer
+            && $this->status === InvoiceStatus::Issued
+            && $this->due_at !== null;
     }
 }

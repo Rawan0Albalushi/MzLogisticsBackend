@@ -68,15 +68,9 @@ class WalletLedgerService
         ]);
     }
 
-    public function releaseCompletedJob(TransportJob $job, ?User $actor = null): ?WalletTransaction
+    public function releasePaymentEarning(Payment $payment, TransportJob $job, ?User $actor = null): ?WalletTransaction
     {
-        if ($job->status !== JobStatus::Completed) {
-            return null;
-        }
-
-        $job->loadMissing(['quotation.providerOrganization']);
-        $payment = Payment::query()->where('quotation_id', $job->quotation_id)->first();
-        if (! $payment || $payment->status !== PaymentStatus::Completed) {
+        if ($payment->status !== PaymentStatus::Completed) {
             return null;
         }
 
@@ -87,6 +81,7 @@ class WalletLedgerService
             return null;
         }
 
+        $payment->loadMissing(['quotation.providerOrganization']);
         $organization = $job->quotation?->providerOrganization ?? $payment->quotation?->providerOrganization;
         if (! $organization) {
             return null;
@@ -101,10 +96,30 @@ class WalletLedgerService
             'payment_id' => $payment->id,
             'transport_job_id' => $job->id,
             'created_by' => $actor?->id,
-            'idempotency_key' => 'earning_released:job:'.$job->id,
-            'description' => 'Job completed. Provider share is now available.',
+            'idempotency_key' => 'earning_released:payment:'.$payment->id,
+            'description' => 'Provider share is now available.',
             'currency' => $payment->currency,
         ]);
+    }
+
+    public function releaseCompletedJob(TransportJob $job, ?User $actor = null): ?WalletTransaction
+    {
+        if ($job->status !== JobStatus::Completed) {
+            return null;
+        }
+
+        $job->loadMissing(['quotation.providerOrganization']);
+        $released = null;
+        $payments = Payment::query()
+            ->where('quotation_id', $job->quotation_id)
+            ->where('status', PaymentStatus::Completed)
+            ->get();
+
+        foreach ($payments as $payment) {
+            $released = $this->releasePaymentEarning($payment, $job, $actor) ?? $released;
+        }
+
+        return $released;
     }
 
     public function reservePayout(Organization $organization, float $amount, Settlement $settlement, ?User $actor = null): WalletTransaction

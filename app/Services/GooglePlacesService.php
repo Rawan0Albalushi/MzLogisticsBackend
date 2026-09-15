@@ -58,7 +58,7 @@ class GooglePlacesService
     }
 
     /**
-     * @return array{place_id: string, name: string|null, address: string, city: string, lat: float, lng: float}
+     * @return array{place_id: string, name: string|null, address: string, city: string, governorate: string, wilayat: string, lat: float, lng: float}
      */
     public function details(string $placeId, string $language = 'en'): array
     {
@@ -75,34 +75,153 @@ class GooglePlacesService
             throw new RuntimeException('Google Maps did not return coordinates for this place.');
         }
 
+        $divisions = $this->divisionsFromComponents($result['address_components'] ?? []);
+
         return [
             'place_id' => (string) ($result['place_id'] ?? $placeId),
             'name' => isset($result['name']) ? (string) $result['name'] : null,
             'address' => $this->addressFromResult($result),
-            'city' => $this->cityFromComponents($result['address_components'] ?? []),
+            'city' => $divisions['city'],
+            'governorate' => $divisions['governorate'],
+            'wilayat' => $divisions['wilayat'],
             'lat' => $location['lat'],
             'lng' => $location['lng'],
         ];
     }
 
     /**
-     * @return array{address: string, city: string, lat: float, lng: float}|null
+     * @return array{address: string, city: string, governorate: string, wilayat: string, lat: float, lng: float}|null
      */
     public function reverse(float $lat, float $lng, string $language = 'en'): ?array
+    {
+        $google = null;
+        if ($this->isConfigured()) {
+            try {
+                $google = $this->reverseGoogle($lat, $lng, $language);
+            } catch (RuntimeException) {
+                $google = null;
+            }
+        }
+        if ($google !== null && $google['governorate'] !== '' && $google['wilayat'] !== '') {
+            return $google;
+        }
+
+        $osm = $this->reverseOsm($lat, $lng, $language);
+        if ($osm === null) {
+            return $google;
+        }
+        if ($google === null) {
+            return $osm;
+        }
+
+        return [
+            'address' => $google['address'] !== '' ? $google['address'] : $osm['address'],
+            'city' => $osm['city'] !== '' ? $osm['city'] : $google['city'],
+            'governorate' => $osm['governorate'] !== '' ? $osm['governorate'] : $google['governorate'],
+            'wilayat' => $osm['wilayat'] !== '' ? $osm['wilayat'] : $google['wilayat'],
+            'lat' => $lat,
+            'lng' => $lng,
+        ];
+    }
+
+    /**
+     * @return array{address: string, city: string, governorate: string, wilayat: string, lat: float, lng: float}|null
+     */
+    private function reverseGoogle(float $lat, float $lng, string $language): ?array
     {
         $payload = $this->get('https://maps.googleapis.com/maps/api/geocode/json', [
             'latlng' => $lat.','.$lng,
             'language' => $language,
         ]);
 
-        $result = is_array($payload['results'][0] ?? null) ? $payload['results'][0] : null;
-        if ($result === null) {
+        $best = null;
+        foreach ($payload['results'] ?? [] as $result) {
+            if (! is_array($result)) {
+                continue;
+            }
+            $divisions = $this->divisionsFromComponents($result['address_components'] ?? []);
+            $candidate = [
+                'address' => $this->addressFromResult($result),
+                'city' => $divisions['city'],
+                'governorate' => $divisions['governorate'],
+                'wilayat' => $divisions['wilayat'],
+                'lat' => $lat,
+                'lng' => $lng,
+            ];
+            if ($best === null) {
+                $best = $candidate;
+            }
+            if ($candidate['governorate'] !== '' && $candidate['wilayat'] !== '') {
+                return $candidate;
+            }
+        }
+
+        return $best;
+    }
+
+    /**
+     * @return array{address: string, city: string, governorate: string, wilayat: string, lat: float, lng: float}|null
+     */
+    private function reverseOsm(float $lat, float $lng, string $language): ?array
+    {
+        try {
+            $response = Http::timeout(8)
+                ->acceptJson()
+                ->withHeaders([
+                    'User-Agent' => 'MZ-Logistics/1.0',
+                    'Accept-Language' => $language,
+                ])
+                ->get('https://nominatim.openstreetmap.org/reverse', [
+                    'lat' => $lat,
+                    'lon' => $lng,
+                    'format' => 'jsonv2',
+                    'addressdetails' => 1,
+                    'zoom' => 14,
+                ])
+                ->throw();
+        } catch (RequestException $exception) {
+            Log::warning('Nominatim reverse lookup failed.', [
+                'message' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
+
+        $payload = $response->json();
+        $address = is_array($payload) && is_array($payload['address'] ?? null)
+            ? $payload['address']
+            : [];
+        if ($address === []) {
+            return null;
+        }
+
+        $governorate = $this->stripDivisionPrefix((string) ($address['state'] ?? $address['region'] ?? ''));
+        $wilayat = $this->stripDivisionPrefix((string) (
+            $address['province']
+            ?? $address['county']
+            ?? $address['municipality']
+            ?? $address['state_district']
+            ?? ''
+        ));
+        if ($wilayat === '' || $this->samePlaceName($wilayat, $governorate)) {
+            $wilayat = $this->stripDivisionPrefix((string) (
+                $address['city'] ?? $address['town'] ?? $address['village'] ?? $address['suburb'] ?? ''
+            ));
+        }
+        if ($wilayat !== '' && $this->samePlaceName($wilayat, $governorate)) {
+            $wilayat = $this->stripDivisionPrefix((string) ($address['suburb'] ?? $address['city_district'] ?? ''));
+        }
+
+        $city = $this->joinDivisions($wilayat, $governorate);
+        if ($governorate === '' && $wilayat === '') {
             return null;
         }
 
         return [
-            'address' => $this->addressFromResult($result),
-            'city' => $this->cityFromComponents($result['address_components'] ?? []),
+            'address' => '',
+            'city' => $city,
+            'governorate' => $governorate,
+            'wilayat' => $wilayat,
             'lat' => $lat,
             'lng' => $lng,
         ];
@@ -180,6 +299,110 @@ class GooglePlacesService
         }
 
         return mb_substr(trim((string) ($result['name'] ?? '')), 0, 255);
+    }
+
+    /**
+     * @param  mixed  $components
+     * @return array{governorate: string, wilayat: string, city: string}
+     */
+    private function divisionsFromComponents(mixed $components): array
+    {
+        $governorate = $this->stripDivisionPrefix($this->componentName($components, ['administrative_area_level_1']));
+        $wilayat = $this->stripDivisionPrefix($this->componentName($components, [
+            'administrative_area_level_2',
+            'locality',
+            'postal_town',
+            'sublocality',
+            'sublocality_level_1',
+            'administrative_area_level_3',
+        ]);
+
+        if ($wilayat !== '' && $this->samePlaceName($wilayat, $governorate)) {
+            $wilayat = $this->componentName($components, [
+                'sublocality',
+                'sublocality_level_1',
+                'neighborhood',
+            ]);
+        }
+
+        $city = $this->joinDivisions($wilayat, $governorate);
+        if ($city === '') {
+            $city = $this->cityFromComponents($components);
+        }
+
+        return [
+            'governorate' => $governorate,
+            'wilayat' => $wilayat,
+            'city' => $city,
+        ];
+    }
+
+    /**
+     * @param  mixed  $components
+     * @param  list<string>  $types
+     */
+    private function componentName(mixed $components, array $types): string
+    {
+        if (! is_array($components)) {
+            return '';
+        }
+
+        foreach ($types as $type) {
+            foreach ($components as $component) {
+                if (! is_array($component)) {
+                    continue;
+                }
+
+                $componentTypes = $component['types'] ?? [];
+                if (! is_array($componentTypes) || ! in_array($type, $componentTypes, true)) {
+                    continue;
+                }
+
+                $name = trim((string) ($component['long_name'] ?? ''));
+                if ($name !== '') {
+                    return mb_substr($name, 0, 120);
+                }
+            }
+        }
+
+        return '';
+    }
+
+    private function samePlaceName(string $left, string $right): bool
+    {
+        return mb_strtolower($this->stripDivisionPrefix($left)) === mb_strtolower($this->stripDivisionPrefix($right));
+    }
+
+    private function stripDivisionPrefix(string $value): string
+    {
+        $name = trim($value);
+        $name = preg_replace('/^(محافظة|ولاية)\s+/u', '', $name) ?? $name;
+        $name = preg_replace('/^(Governorate|Wilayat|Wilaya)(?:\s+of)?\s+/iu', '', $name) ?? $name;
+        $name = preg_replace('/\s+(Governorate|Wilayat|Wilaya)$/iu', '', $name) ?? $name;
+
+        return mb_substr(trim($name), 0, 120);
+    }
+
+    private function joinDivisions(string $wilayat, string $governorate): string
+    {
+        $parts = [];
+        foreach ([$wilayat, $governorate] as $part) {
+            if ($part === '') {
+                continue;
+            }
+            $seen = false;
+            foreach ($parts as $existing) {
+                if ($this->samePlaceName($existing, $part)) {
+                    $seen = true;
+                    break;
+                }
+            }
+            if (! $seen) {
+                $parts[] = $part;
+            }
+        }
+
+        return mb_substr(implode(', ', $parts), 0, 120);
     }
 
     /**

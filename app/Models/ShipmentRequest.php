@@ -2,7 +2,10 @@
 
 namespace App\Models;
 
+use App\Enums\BillingTrigger;
+use App\Enums\BillingUnit;
 use App\Enums\ShipmentStatus;
+use App\Support\PaymentTerms;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -31,6 +34,10 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'notes',
     'status',
     'awarded_quotation_id',
+    'payment_contract_id',
+    'payment_billing_trigger',
+    'payment_due_days',
+    'payment_billing_unit',
     'published_at',
 ])]
 class ShipmentRequest extends Model
@@ -39,6 +46,9 @@ class ShipmentRequest extends Model
     {
         return [
             'status' => ShipmentStatus::class,
+            'payment_billing_trigger' => BillingTrigger::class,
+            'payment_due_days' => 'integer',
+            'payment_billing_unit' => BillingUnit::class,
             'weight_tons' => 'decimal:2',
             'volume_cbm' => 'decimal:2',
             'quantity' => 'decimal:2',
@@ -74,6 +84,16 @@ class ShipmentRequest extends Model
     public function transportJob(): HasOne
     {
         return $this->hasOne(TransportJob::class);
+    }
+
+    public function paymentContract(): BelongsTo
+    {
+        return $this->belongsTo(PaymentContract::class);
+    }
+
+    public function paymentTerms(): PaymentTerms
+    {
+        return PaymentTerms::fromShipment($this);
     }
 
     public function isPublished(): bool

@@ -77,6 +77,7 @@ class PlacesApiTest extends TestCase
                     'geometry' => ['location' => ['lat' => 24.3820, 'lng' => 56.7396]],
                     'address_components' => [
                         ['long_name' => 'Sohar', 'types' => ['locality', 'political']],
+                        ['long_name' => 'Al Batinah North Governorate', 'types' => ['administrative_area_level_1', 'political']],
                     ],
                 ],
             ]),
@@ -85,7 +86,9 @@ class PlacesApiTest extends TestCase
         $this->actingAs($this->customer(), 'sanctum')
             ->getJson('/api/v1/places/details?place_id=ChIJsohar')
             ->assertOk()
-            ->assertJsonPath('data.city', 'Sohar')
+            ->assertJsonPath('data.city', 'Sohar, Al Batinah North')
+            ->assertJsonPath('data.governorate', 'Al Batinah North')
+            ->assertJsonPath('data.wilayat', 'Sohar')
             ->assertJsonPath('data.lat', 24.382)
             ->assertJsonPath('data.lng', 56.7396);
     }
@@ -100,6 +103,7 @@ class PlacesApiTest extends TestCase
                     'formatted_address' => 'Nizwa Central Market, Nizwa, Oman',
                     'address_components' => [
                         ['long_name' => 'Nizwa', 'types' => ['locality', 'political']],
+                        ['long_name' => 'Ad Dakhiliyah Governorate', 'types' => ['administrative_area_level_1', 'political']],
                     ],
                 ]],
             ]),
@@ -108,8 +112,32 @@ class PlacesApiTest extends TestCase
         $this->actingAs($this->customer(), 'sanctum')
             ->getJson('/api/v1/places/reverse?lat=22.9333&lng=57.5333')
             ->assertOk()
-            ->assertJsonPath('data.city', 'Nizwa')
+            ->assertJsonPath('data.city', 'Nizwa, Ad Dakhiliyah')
+            ->assertJsonPath('data.governorate', 'Ad Dakhiliyah')
+            ->assertJsonPath('data.wilayat', 'Nizwa')
             ->assertJsonPath('data.address', 'Nizwa Central Market, Nizwa, Oman');
+    }
+
+    public function test_reverse_fills_governorate_and_wilayat_from_openstreetmap_when_google_is_missing(): void
+    {
+        config(['services.google_maps.key' => null]);
+        Http::fake([
+            'nominatim.openstreetmap.org/reverse*' => Http::response([
+                'address' => [
+                    'town' => 'Al Ghubra',
+                    'province' => 'Wilayat Bawshar',
+                    'state' => 'Muscat Governorate',
+                    'country' => 'Oman',
+                    'country_code' => 'om',
+                ],
+            ]),
+        ]);
+
+        $this->actingAs($this->customer(), 'sanctum')
+            ->getJson('/api/v1/places/reverse?lat=23.5880&lng=58.3829')
+            ->assertOk()
+            ->assertJsonPath('data.governorate', 'Muscat')
+            ->assertJsonPath('data.wilayat', 'Bawshar');
     }
 
     private function customer(): User

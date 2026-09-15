@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'idempotency_key',
     'shipment_request_id',
     'quotation_id',
+    'invoice_id',
     'payer_organization_id',
     'amount',
     'commission_amount',
@@ -48,6 +49,11 @@ class Payment extends Model
     public function quotation(): BelongsTo
     {
         return $this->belongsTo(Quotation::class);
+    }
+
+    public function invoice(): BelongsTo
+    {
+        return $this->belongsTo(Invoice::class);
     }
 
     public function payerOrganization(): BelongsTo

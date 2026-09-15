@@ -8,12 +8,15 @@ use App\Enums\UserType;
 use App\Models\ShipmentRequest;
 use App\Models\User;
 use App\Support\AuditLogger;
+use App\Support\ListFilters;
 use App\Support\ReferenceGenerator;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Validation\ValidationException;
 
 class ShipmentService
 {
+    public function __construct(private readonly PaymentContractService $paymentContracts) {}
+
     /**
      * @param  array<string, mixed>  $payload
      */
@@ -30,9 +33,11 @@ class ShipmentService
             'published_at' => $status === ShipmentStatus::Published ? now() : null,
         ]);
 
+        $this->paymentContracts->snapshotOnto($shipment, $payload);
+
         AuditLogger::record('shipment.created', $shipment, [], $shipment->toArray(), $user);
 
-        return $shipment;
+        return $shipment->fresh();
     }
 
     /**
@@ -48,6 +53,7 @@ class ShipmentService
 
         $shipment->fill($this->attributes($payload));
         $shipment->save();
+        $this->paymentContracts->snapshotOnto($shipment, $payload);
 
         AuditLogger::record('shipment.updated', $shipment, [], $shipment->toArray(), $user);
 
@@ -66,6 +72,8 @@ class ShipmentService
             'status' => ShipmentStatus::Published,
             'published_at' => now(),
         ])->save();
+
+        $this->paymentContracts->snapshotOnto($shipment);
 
         AuditLogger::record('shipment.published', $shipment, [], ['status' => $shipment->status->value], $user);
 
@@ -105,7 +113,7 @@ class ShipmentService
         }
 
         if (! empty($filters['search'])) {
-            \App\Support\ListFilters::search(
+            ListFilters::search(
                 $query,
                 $filters['search'],
                 ['reference', 'cargo_type', 'pickup_city', 'delivery_city'],
@@ -114,10 +122,10 @@ class ShipmentService
         }
 
         if (! empty($filters['city'])) {
-            \App\Support\ListFilters::city($query, $filters['city'], ['pickup_city', 'delivery_city']);
+            ListFilters::city($query, $filters['city'], ['pickup_city', 'delivery_city']);
         }
 
-        \App\Support\ListFilters::dateRange($query, $filters, 'required_date');
+        ListFilters::dateRange($query, $filters, 'required_date');
 
         return $query->paginate((int) ($filters['per_page'] ?? 15));
     }
@@ -138,11 +146,11 @@ class ShipmentService
             'volume_cbm' => $payload['volume_cbm'] ?? null,
             'quantity' => $unit === QuantityUnit::Tons ? $weight : $payload['quantity'],
             'quantity_unit' => $unit->value,
-            'pickup_address' => $payload['pickup_address'],
+            'pickup_address' => $payload['pickup_address'] ?? '',
             'pickup_city' => $payload['pickup_city'],
             'pickup_lat' => $payload['pickup_lat'] ?? null,
             'pickup_lng' => $payload['pickup_lng'] ?? null,
-            'delivery_address' => $payload['delivery_address'],
+            'delivery_address' => $payload['delivery_address'] ?? '',
             'delivery_city' => $payload['delivery_city'],
             'delivery_lat' => $payload['delivery_lat'] ?? null,
             'delivery_lng' => $payload['delivery_lng'] ?? null,

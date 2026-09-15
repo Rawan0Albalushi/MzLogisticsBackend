@@ -18,6 +18,8 @@ use Illuminate\Validation\ValidationException;
 
 class AuthService
 {
+    public function __construct(private readonly PaymentContractService $paymentContracts) {}
+
     /**
      * @param  array<string, mixed>  $payload
      * @return array{user: User, token: string}
@@ -53,6 +55,8 @@ class AuthService
 
             $role = $accountType === AccountType::Company ? 'Company Admin' : 'Company Admin';
             $user->assignRole($role);
+
+            $this->paymentContracts->ensureForCustomer($organization);
 
             return $this->issueToken($user);
         });

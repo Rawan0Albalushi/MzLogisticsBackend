@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\FleetController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OrganizationController;
+use App\Http\Controllers\Api\PaymentContractController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PaymentMethodController;
 use App\Http\Controllers\Api\PlacesController;
@@ -94,11 +95,18 @@ Route::prefix('v1')->group(function (): void {
 
         Route::get('/payments', [FinanceController::class, 'payments']);
         Route::get('/payments/{payment}/status', [PaymentController::class, 'status']);
+        Route::get('/payment-contract', [PaymentContractController::class, 'mine']);
+        Route::get('/payment-contracts', [PaymentContractController::class, 'index']);
+        Route::get('/organizations/{organization}/payment-contract', [PaymentContractController::class, 'show']);
+        Route::put('/organizations/{organization}/payment-contract', [PaymentContractController::class, 'update']);
+        Route::post('/organizations/{organization}/payment-contract/approve', [PaymentContractController::class, 'approve']);
+        Route::post('/organizations/{organization}/payment-contract/reject', [PaymentContractController::class, 'reject']);
         Route::get('/payment-methods', [PaymentMethodController::class, 'index']);
         Route::post('/payment-methods', [PaymentMethodController::class, 'store']);
         Route::patch('/payment-methods/{payment_method}', [PaymentMethodController::class, 'update']);
         Route::delete('/payment-methods/{payment_method}', [PaymentMethodController::class, 'destroy']);
         Route::get('/invoices', [FinanceController::class, 'invoices']);
+        Route::post('/invoices/{invoice}/pay', [FinanceController::class, 'payInvoice']);
         Route::get('/settlements', [FinanceController::class, 'settlements']);
         Route::post('/settlements', [FinanceController::class, 'storeSettlement']);
         Route::post('/settlements/request', [FinanceController::class, 'requestSettlement']);

@@ -34,6 +34,7 @@ class ShipmentResource extends JsonResource
             'customer' => OrganizationResource::make($this->whenLoaded('customerOrganization')),
             'quotations' => QuotationResource::collection($this->whenLoaded('quotations')),
             'quotations_count' => $this->whenCounted('quotations'),
+            'payment_terms' => $this->paymentTerms()->toArray(),
             'created_at' => $this->created_at,
         ];
     }

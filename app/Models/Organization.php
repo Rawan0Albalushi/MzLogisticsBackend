@@ -90,6 +90,11 @@ class Organization extends Model
         return $this->hasOne(Wallet::class);
     }
 
+    public function paymentContract(): HasOne
+    {
+        return $this->hasOne(PaymentContract::class);
+    }
+
     public function scopeCustomers(Builder $query): Builder
     {
         return $query->where('type', OrganizationType::Customer);

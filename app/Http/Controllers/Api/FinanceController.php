@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\InvoiceResource;
+use App\Http\Resources\JobResource;
 use App\Http\Resources\PaymentResource;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Settlement;
+use App\Services\JobOrchestrationService;
 use App\Services\SettlementService;
 use App\Support\ApiResponse;
 use App\Support\ListFilters;
@@ -17,7 +19,10 @@ use Illuminate\Http\Request;
 
 class FinanceController extends Controller
 {
-    public function __construct(private readonly SettlementService $settlements) {}
+    public function __construct(
+        private readonly SettlementService $settlements,
+        private readonly JobOrchestrationService $jobs,
+    ) {}
 
     public function payments(Request $request): JsonResponse
     {
@@ -51,7 +56,7 @@ class FinanceController extends Controller
         $user = $request->user();
 
         $items = Invoice::query()
-            ->with(['organization', 'transportJob', 'payment'])
+            ->with(['organization', 'transportJob', 'payment', 'trip'])
             ->when(! $user->isPlatform(), fn ($q) => $q->where('organization_id', $user->organization_id))
             ->when($request->filled('type'), fn ($q) => $q->where('type', $request->string('type')))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
@@ -68,6 +73,38 @@ class FinanceController extends Controller
             ->paginate((int) $request->integer('per_page', 15));
 
         return ApiResponse::success(InvoiceResource::collection($items));
+    }
+
+    public function payInvoice(Request $request, Invoice $invoice): JsonResponse
+    {
+        abort_unless($request->user()->can(Permissions::PAYMENTS_VIEW) || $request->user()->can(Permissions::INVOICES_VIEW), 403);
+
+        $data = $request->validate([
+            'payment_method' => ['nullable', 'string', 'max:32'],
+        ]);
+
+        $result = $this->jobs->payCustomerInvoice(
+            $request->user(),
+            $invoice,
+            $data['payment_method'] ?? null,
+            $request->header('X-Payment-Callback-Base'),
+        );
+
+        if ($result->requiresCheckout) {
+            return ApiResponse::success([
+                'requires_checkout' => true,
+                'payment_link' => $result->paymentLink,
+                'session_id' => $result->sessionId,
+                'payment' => PaymentResource::make($result->payment)->resolve(),
+                'job' => $result->job ? JobResource::make($result->job)->resolve() : null,
+            ], 'Complete payment with Thawani to settle this invoice.');
+        }
+
+        return ApiResponse::success([
+            'requires_checkout' => false,
+            'payment' => PaymentResource::make($result->payment)->resolve(),
+            'job' => $result->job ? JobResource::make($result->job)->resolve() : null,
+        ], 'Invoice paid.');
     }
 
     public function settlements(Request $request): JsonResponse

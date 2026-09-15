@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\DTOs\InvoicePaymentResult;
 use App\DTOs\QuotationAcceptanceResult;
 use App\Enums\InvoiceStatus;
 use App\Enums\InvoiceType;
@@ -19,6 +20,8 @@ use App\Models\TransportJob;
 use App\Models\Trip;
 use App\Models\User;
 use App\Support\AuditLogger;
+use App\Support\BillingAllocator;
+use App\Support\PaymentTerms;
 use App\Support\ReferenceGenerator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -35,21 +38,41 @@ class JobOrchestrationService
     {
         $quotation->load(['shipmentRequest', 'providerOrganization']);
 
-        $existingJob = TransportJob::query()->where('quotation_id', $quotation->id)->first();
-        if ($existingJob) {
-            $payment = Payment::query()->where('quotation_id', $quotation->id)->firstOrFail();
-
-            return new QuotationAcceptanceResult(
-                payment: $payment,
-                requiresCheckout: false,
-                job: $existingJob->load(['trips', 'shipmentRequest', 'quotation', 'customerOrganization', 'providerOrganization']),
-            );
+        $existing = $this->existingAcceptance($quotation);
+        if ($existing) {
+            return $existing;
         }
 
         $this->assertQuotationCanBeAwarded($user, $quotation);
+        $shipment = $quotation->shipmentRequest;
+        $terms = PaymentTerms::fromShipment($shipment);
+
+        if ($terms->isDeferred()) {
+            return DB::transaction(function () use ($user, $quotation, $shipment) {
+                $quotation = Quotation::query()->whereKey($quotation->id)->lockForUpdate()->firstOrFail();
+                $shipment = ShipmentRequest::query()->whereKey($shipment->id)->lockForUpdate()->firstOrFail();
+                $quotation->setRelation('shipmentRequest', $shipment);
+                $quotation->loadMissing('providerOrganization');
+
+                $existing = $this->existingAcceptance($quotation);
+                if ($existing) {
+                    return $existing;
+                }
+
+                $this->assertQuotationCanBeAwarded($user, $quotation);
+
+                $job = $this->createAwardedJob($quotation, $shipment, $user, null, paid: false);
+
+                return new QuotationAcceptanceResult(
+                    payment: null,
+                    requiresCheckout: false,
+                    job: $job,
+                    paymentDeferred: true,
+                );
+            });
+        }
 
         $paymentMethod = $this->paymentMethods->resolveActive($method);
-        $shipment = $quotation->shipmentRequest;
         $idempotencyKey = ReferenceGenerator::idempotencyKey('quotation:'.$quotation->id);
 
         return DB::transaction(function () use ($user, $quotation, $shipment, $paymentMethod, $idempotencyKey, $callbackBaseUrl) {
@@ -58,41 +81,15 @@ class JobOrchestrationService
             $quotation->setRelation('shipmentRequest', $shipment);
             $quotation->loadMissing('providerOrganization');
 
-            $existingJob = TransportJob::query()->where('quotation_id', $quotation->id)->first();
-            if ($existingJob) {
-                $payment = Payment::query()->where('quotation_id', $quotation->id)->firstOrFail();
-
-                return new QuotationAcceptanceResult(
-                    payment: $payment,
-                    requiresCheckout: false,
-                    job: $existingJob->load(['trips', 'shipmentRequest', 'quotation', 'customerOrganization', 'providerOrganization']),
-                );
+            $existing = $this->existingAcceptance($quotation);
+            if ($existing) {
+                return $existing;
             }
 
             $this->assertQuotationCanBeAwarded($user, $quotation);
             $this->assertNoConflictingCheckout($shipment, $quotation);
 
-            $commissionRate = $quotation->providerOrganization->commissionRate();
-            $amount = (float) $quotation->total_price;
-            $commission = round($amount * $commissionRate, 3);
-            $providerAmount = round($amount - $commission, 3);
-
-            $payment = Payment::query()->firstOrCreate(
-                ['idempotency_key' => $idempotencyKey],
-                [
-                    'reference' => ReferenceGenerator::next('PAY', Payment::class),
-                    'shipment_request_id' => $shipment->id,
-                    'quotation_id' => $quotation->id,
-                    'payer_organization_id' => $user->organization_id,
-                    'amount' => $amount,
-                    'commission_amount' => $commission,
-                    'provider_amount' => $providerAmount,
-                    'currency' => $quotation->currency,
-                    'method' => $paymentMethod->code,
-                    'status' => PaymentStatus::Processing,
-                    'gateway' => $this->gatewayFor($paymentMethod),
-                ]
-            );
+            $payment = $this->createOrResumePayment($quotation, $shipment, $user, $paymentMethod, $idempotencyKey);
 
             if ($payment->status === PaymentStatus::Completed) {
                 $job = $this->fulfillPaidQuotation($payment, $user);
@@ -104,25 +101,12 @@ class JobOrchestrationService
                 );
             }
 
-            if ($payment->status === PaymentStatus::Failed) {
-                $payment->forceFill([
-                    'status' => PaymentStatus::Processing,
-                    'method' => $paymentMethod->code,
-                    'gateway' => $this->gatewayFor($paymentMethod),
-                ])->save();
-            } elseif ($payment->method !== $paymentMethod->code) {
-                $payment->forceFill([
-                    'method' => $paymentMethod->code,
-                    'gateway' => $this->gatewayFor($paymentMethod),
-                ])->save();
-            }
-
             if ($paymentMethod->isThawani() && $this->paymentGateway->usesHostedCheckout()) {
                 $checkout = $this->paymentGateway->createCheckout($payment, [
                     'user_id' => $user->id,
                     'model_type' => Payment::class,
                     'model_id' => $payment->id,
-                    'amount' => $amount,
+                    'amount' => (float) $payment->amount,
                     'currency' => $quotation->currency,
                     'description' => 'MZ '.$quotation->reference,
                     'success_url' => $this->callbackUrl('payment.success', $payment->id, $callbackBaseUrl),
@@ -142,11 +126,7 @@ class JobOrchestrationService
                 );
             }
 
-            if ($paymentMethod->isCash()) {
-                $this->paymentGateway->captureOffline($payment, 'cash');
-            } else {
-                $this->paymentGateway->capture($payment);
-            }
+            $this->captureWithMethod($payment, $paymentMethod);
 
             if ($payment->fresh()->status !== PaymentStatus::Completed) {
                 throw ValidationException::withMessages([
@@ -164,6 +144,90 @@ class JobOrchestrationService
         });
     }
 
+    public function payCustomerInvoice(User $user, Invoice $invoice, ?string $method = null, ?string $callbackBaseUrl = null): InvoicePaymentResult
+    {
+        $invoice->load(['transportJob.quotation.providerOrganization', 'transportJob.shipmentRequest']);
+        $job = $invoice->transportJob;
+
+        if ($invoice->status === InvoiceStatus::Paid) {
+            $payment = $invoice->payment
+                ?? Payment::query()->where('invoice_id', $invoice->id)->first()
+                ?? Payment::query()->where('quotation_id', $job?->quotation_id)->firstOrFail();
+
+            return new InvoicePaymentResult(
+                payment: $payment,
+                requiresCheckout: false,
+                job: $job?->load(['trips', 'shipmentRequest', 'quotation', 'customerOrganization', 'providerOrganization', 'invoices']),
+            );
+        }
+
+        $this->assertInvoicePayable($user, $invoice);
+        $quotation = $job->quotation;
+        $shipment = $job->shipmentRequest;
+        $paymentMethod = $this->paymentMethods->resolveActive($method);
+        $idempotencyKey = ReferenceGenerator::idempotencyKey('invoice:'.$invoice->id);
+
+        return DB::transaction(function () use ($user, $invoice, $job, $quotation, $shipment, $paymentMethod, $idempotencyKey, $callbackBaseUrl) {
+            $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $this->assertInvoicePayable($user, $invoice->load(['transportJob.quotation.providerOrganization', 'transportJob.shipmentRequest']));
+
+            $payment = $this->createOrResumePayment($quotation, $shipment, $user, $paymentMethod, $idempotencyKey, $invoice);
+
+            if ($payment->status === PaymentStatus::Completed) {
+                $this->settleCompletedPayment($payment, $job, $user, $invoice);
+
+                return new InvoicePaymentResult(
+                    payment: $payment->fresh(),
+                    requiresCheckout: false,
+                    job: $job->fresh(['trips', 'shipmentRequest', 'quotation', 'customerOrganization', 'providerOrganization', 'invoices']),
+                );
+            }
+
+            if ($paymentMethod->isThawani() && $this->paymentGateway->usesHostedCheckout()) {
+                $checkout = $this->paymentGateway->createCheckout($payment, [
+                    'user_id' => $user->id,
+                    'model_type' => Payment::class,
+                    'model_id' => $payment->id,
+                    'amount' => (float) $payment->amount,
+                    'currency' => $quotation->currency,
+                    'description' => 'MZ '.$invoice->reference,
+                    'success_url' => $this->callbackUrl('payment.success', $payment->id, $callbackBaseUrl),
+                    'cancel_url' => $this->callbackUrl('payment.cancel', $payment->id, $callbackBaseUrl),
+                    'metadata' => [
+                        'invoice_id' => $invoice->id,
+                        'quotation_id' => $quotation->id,
+                        'shipment_request_id' => $shipment->id,
+                        'payment_reference' => $payment->reference,
+                    ],
+                ]);
+
+                return new InvoicePaymentResult(
+                    payment: $payment->fresh(),
+                    requiresCheckout: true,
+                    paymentLink: $checkout->paymentLink,
+                    sessionId: $checkout->sessionId,
+                    job: $job,
+                );
+            }
+
+            $this->captureWithMethod($payment, $paymentMethod);
+
+            if ($payment->fresh()->status !== PaymentStatus::Completed) {
+                throw ValidationException::withMessages([
+                    'payment' => ['Payment could not be verified.'],
+                ]);
+            }
+
+            $this->settleCompletedPayment($payment->fresh(), $job, $user, $invoice);
+
+            return new InvoicePaymentResult(
+                payment: $payment->fresh(),
+                requiresCheckout: false,
+                job: $job->fresh(['trips', 'shipmentRequest', 'quotation', 'customerOrganization', 'providerOrganization', 'invoices']),
+            );
+        });
+    }
+
     public function completePaidQuotation(Payment $payment, ?User $user = null): TransportJob
     {
         return DB::transaction(function () use ($payment, $user) {
@@ -176,8 +240,61 @@ class JobOrchestrationService
                 ]);
             }
 
+            if ($captured->invoice_id) {
+                $invoice = Invoice::query()->with(['transportJob.quotation.providerOrganization'])->findOrFail($captured->invoice_id);
+                $job = $invoice->transportJob;
+                $this->settleCompletedPayment($captured, $job, $user, $invoice);
+
+                return $job->fresh(['trips', 'shipmentRequest', 'quotation', 'customerOrganization', 'providerOrganization', 'invoices']);
+            }
+
             return $this->fulfillPaidQuotation($captured, $user);
         });
+    }
+
+    public function openDeferredInvoices(TransportJob $job): void
+    {
+        $job->loadMissing('shipmentRequest');
+        $terms = PaymentTerms::fromShipment($job->shipmentRequest);
+
+        if (! $terms->isDeferred() || $terms->isPerTrip() || $job->status !== JobStatus::Completed) {
+            return;
+        }
+
+        Invoice::query()
+            ->where('transport_job_id', $job->id)
+            ->where('type', InvoiceType::Customer)
+            ->where('status', InvoiceStatus::Issued)
+            ->whereNull('trip_id')
+            ->whereNull('due_at')
+            ->update([
+                'due_at' => now()->addDays($terms->dueDays),
+            ]);
+    }
+
+    public function openDeliveredTripInvoice(Trip $trip): void
+    {
+        if ($trip->status !== TripStatus::Completed) {
+            return;
+        }
+
+        $trip->loadMissing('transportJob.shipmentRequest');
+        $job = $trip->transportJob;
+        $terms = PaymentTerms::fromShipment($job->shipmentRequest);
+
+        if (! $terms->isPerTrip()) {
+            return;
+        }
+
+        Invoice::query()
+            ->where('transport_job_id', $job->id)
+            ->where('trip_id', $trip->id)
+            ->where('type', InvoiceType::Customer)
+            ->where('status', InvoiceStatus::Issued)
+            ->whereNull('due_at')
+            ->update([
+                'due_at' => now()->addDays($terms->dueDays),
+            ]);
     }
 
     public function cancelCheckout(Payment $payment): Payment
@@ -199,11 +316,24 @@ class JobOrchestrationService
 
         $existingJob = TransportJob::query()->where('quotation_id', $quotation->id)->first();
         if ($existingJob) {
-            $this->walletLedger->creditPendingEarning($payment, $existingJob, $user);
+            $this->settleCompletedPayment($payment, $existingJob, $user);
 
-            return $existingJob->load(['trips', 'shipmentRequest', 'quotation', 'customerOrganization', 'providerOrganization']);
+            return $existingJob->load(['trips', 'shipmentRequest', 'quotation', 'customerOrganization', 'providerOrganization', 'invoices']);
         }
 
+        $job = $this->createAwardedJob($quotation, $shipment, $user, $payment, paid: true);
+        $this->walletLedger->creditPendingEarning($payment, $job, $user);
+
+        return $job;
+    }
+
+    private function createAwardedJob(
+        Quotation $quotation,
+        ShipmentRequest $shipment,
+        ?User $user,
+        ?Payment $payment,
+        bool $paid,
+    ): TransportJob {
         if (! in_array($quotation->status, [QuotationStatus::Submitted, QuotationStatus::Accepted], true)) {
             throw ValidationException::withMessages([
                 'quotation' => ['This quotation cannot be awarded.'],
@@ -215,6 +345,8 @@ class JobOrchestrationService
                 'shipment' => ['This shipment has already been awarded.'],
             ]);
         }
+
+        $amounts = $this->amountsFor($quotation, $payment);
 
         $job = TransportJob::query()->create([
             'reference' => ReferenceGenerator::next('JOB', TransportJob::class),
@@ -248,41 +380,15 @@ class JobOrchestrationService
             ]);
         }
 
-        Invoice::query()->create([
-            'reference' => ReferenceGenerator::next('INV', Invoice::class),
-            'organization_id' => $shipment->customer_organization_id,
-            'transport_job_id' => $job->id,
-            'payment_id' => $payment->id,
-            'type' => InvoiceType::Customer,
-            'amount' => $payment->amount,
-            'currency' => $quotation->currency,
-            'status' => InvoiceStatus::Paid,
-            'issued_at' => now(),
-        ]);
-
-        Invoice::query()->create([
-            'reference' => ReferenceGenerator::next('INV', Invoice::class),
-            'organization_id' => $quotation->provider_organization_id,
-            'transport_job_id' => $job->id,
-            'payment_id' => $payment->id,
-            'type' => InvoiceType::Provider,
-            'amount' => $payment->provider_amount,
-            'currency' => $quotation->currency,
-            'status' => InvoiceStatus::Issued,
-            'issued_at' => now(),
-        ]);
-
-        Invoice::query()->create([
-            'reference' => ReferenceGenerator::next('INV', Invoice::class),
-            'organization_id' => $quotation->provider_organization_id,
-            'transport_job_id' => $job->id,
-            'payment_id' => $payment->id,
-            'type' => InvoiceType::Commission,
-            'amount' => $payment->commission_amount,
-            'currency' => $quotation->currency,
-            'status' => InvoiceStatus::Paid,
-            'issued_at' => now(),
-        ]);
+        $this->createJobInvoices(
+            $job->fresh('trips'),
+            $quotation,
+            $shipment,
+            $payment,
+            $paid,
+            PaymentTerms::fromShipment($shipment),
+            $amounts,
+        );
 
         $quotation->forceFill(['status' => QuotationStatus::Accepted])->save();
         $shipment->quotations()
@@ -295,13 +401,287 @@ class JobOrchestrationService
             'awarded_quotation_id' => $quotation->id,
         ])->save();
 
-        $this->walletLedger->creditPendingEarning($payment, $job, $user);
-
         AuditLogger::record('quotation.accepted', $quotation, [], ['job' => $job->reference], $user);
         AuditLogger::record('job.created', $job, [], $job->toArray(), $user);
-        AuditLogger::record('payment.processed', $payment, [], ['status' => PaymentStatus::Completed->value], $user);
+        if ($payment && $paid) {
+            AuditLogger::record('payment.processed', $payment, [], ['status' => PaymentStatus::Completed->value], $user);
+        }
 
-        return $job->fresh(['trips', 'shipmentRequest', 'quotation', 'customerOrganization', 'providerOrganization']);
+        return $job->fresh(['trips', 'shipmentRequest', 'quotation', 'customerOrganization', 'providerOrganization', 'invoices']);
+    }
+
+    private function settleCompletedPayment(Payment $payment, TransportJob $job, ?User $user, ?Invoice $invoice = null): void
+    {
+        if ($invoice) {
+            $invoice->forceFill([
+                'payment_id' => $payment->id,
+                'status' => InvoiceStatus::Paid,
+            ])->save();
+
+            Invoice::query()
+                ->where('transport_job_id', $job->id)
+                ->where('trip_id', $invoice->trip_id)
+                ->where('type', InvoiceType::Commission)
+                ->where('status', InvoiceStatus::Issued)
+                ->update([
+                    'payment_id' => $payment->id,
+                    'status' => InvoiceStatus::Paid,
+                ]);
+        } else {
+            Invoice::query()
+                ->where('transport_job_id', $job->id)
+                ->whereNull('payment_id')
+                ->update(['payment_id' => $payment->id]);
+
+            Invoice::query()
+                ->where('transport_job_id', $job->id)
+                ->whereIn('type', [InvoiceType::Customer, InvoiceType::Commission])
+                ->where('status', InvoiceStatus::Issued)
+                ->update(['status' => InvoiceStatus::Paid]);
+        }
+
+        $this->walletLedger->creditPendingEarning($payment, $job, $user);
+
+        $tripComplete = $invoice?->trip_id
+            && Trip::query()->whereKey($invoice->trip_id)->where('status', TripStatus::Completed)->exists();
+
+        if ($job->status === JobStatus::Completed || $tripComplete) {
+            $this->walletLedger->releasePaymentEarning($payment, $job, $user);
+        }
+    }
+
+    /**
+     * @param  array{amount: float, commission_amount: float, provider_amount: float}  $amounts
+     */
+    private function createJobInvoices(
+        TransportJob $job,
+        Quotation $quotation,
+        ShipmentRequest $shipment,
+        ?Payment $payment,
+        bool $paid,
+        PaymentTerms $terms,
+        array $amounts,
+    ): void {
+        $invoiceStatus = $paid ? InvoiceStatus::Paid : InvoiceStatus::Issued;
+        $dueAt = $paid ? now() : null;
+
+        if ($terms->isPerTrip() && $job->trips->isNotEmpty()) {
+            $slices = BillingAllocator::split(
+                (float) $quotation->total_price,
+                $quotation->providerOrganization->commissionRate(),
+                $job->trips->map(fn (Trip $trip) => (float) $trip->planned_quantity)->all(),
+            );
+
+            foreach ($job->trips as $index => $trip) {
+                $slice = $slices[$index];
+                $this->storeInvoiceSet(
+                    $job,
+                    $quotation,
+                    $shipment,
+                    $payment,
+                    $invoiceStatus,
+                    $dueAt,
+                    $slice,
+                    $trip->id,
+                );
+            }
+
+            return;
+        }
+
+        $this->storeInvoiceSet($job, $quotation, $shipment, $payment, $invoiceStatus, $dueAt, $amounts);
+    }
+
+    /**
+     * @param  array{amount: float, commission_amount: float, provider_amount: float}  $amounts
+     */
+    private function storeInvoiceSet(
+        TransportJob $job,
+        Quotation $quotation,
+        ShipmentRequest $shipment,
+        ?Payment $payment,
+        InvoiceStatus $invoiceStatus,
+        mixed $dueAt,
+        array $amounts,
+        ?int $tripId = null,
+    ): void {
+        Invoice::query()->create([
+            'reference' => ReferenceGenerator::next('INV', Invoice::class),
+            'organization_id' => $shipment->customer_organization_id,
+            'transport_job_id' => $job->id,
+            'trip_id' => $tripId,
+            'payment_id' => $payment?->id,
+            'type' => InvoiceType::Customer,
+            'amount' => $amounts['amount'],
+            'currency' => $quotation->currency,
+            'status' => $invoiceStatus,
+            'issued_at' => now(),
+            'due_at' => $dueAt,
+        ]);
+
+        Invoice::query()->create([
+            'reference' => ReferenceGenerator::next('INV', Invoice::class),
+            'organization_id' => $quotation->provider_organization_id,
+            'transport_job_id' => $job->id,
+            'trip_id' => $tripId,
+            'payment_id' => $payment?->id,
+            'type' => InvoiceType::Provider,
+            'amount' => $amounts['provider_amount'],
+            'currency' => $quotation->currency,
+            'status' => InvoiceStatus::Issued,
+            'issued_at' => now(),
+        ]);
+
+        Invoice::query()->create([
+            'reference' => ReferenceGenerator::next('INV', Invoice::class),
+            'organization_id' => $quotation->provider_organization_id,
+            'transport_job_id' => $job->id,
+            'trip_id' => $tripId,
+            'payment_id' => $payment?->id,
+            'type' => InvoiceType::Commission,
+            'amount' => $amounts['commission_amount'],
+            'currency' => $quotation->currency,
+            'status' => $invoiceStatus,
+            'issued_at' => now(),
+            'due_at' => $dueAt,
+        ]);
+    }
+
+    private function existingAcceptance(Quotation $quotation): ?QuotationAcceptanceResult
+    {
+        $existingJob = TransportJob::query()->where('quotation_id', $quotation->id)->first();
+        if (! $existingJob) {
+            return null;
+        }
+
+        $payment = Payment::query()->where('quotation_id', $quotation->id)->first();
+        $terms = PaymentTerms::fromShipment($existingJob->shipmentRequest ?? $quotation->shipmentRequest);
+
+        return new QuotationAcceptanceResult(
+            payment: $payment,
+            requiresCheckout: false,
+            job: $existingJob->load(['trips', 'shipmentRequest', 'quotation', 'customerOrganization', 'providerOrganization']),
+            paymentDeferred: $terms->isDeferred() && ($payment === null || $payment->status !== PaymentStatus::Completed),
+        );
+    }
+
+    private function createOrResumePayment(
+        Quotation $quotation,
+        ShipmentRequest $shipment,
+        User $user,
+        PaymentMethod $paymentMethod,
+        string $idempotencyKey,
+        ?Invoice $invoice = null,
+    ): Payment {
+        $commissionRate = $quotation->providerOrganization->commissionRate();
+        $amount = $invoice ? (float) $invoice->amount : (float) $quotation->total_price;
+        $commission = round($amount * $commissionRate, 3);
+        $providerAmount = round($amount - $commission, 3);
+
+        $payment = Payment::query()->firstOrCreate(
+            ['idempotency_key' => $idempotencyKey],
+            [
+                'reference' => ReferenceGenerator::next('PAY', Payment::class),
+                'shipment_request_id' => $shipment->id,
+                'quotation_id' => $quotation->id,
+                'invoice_id' => $invoice?->id,
+                'payer_organization_id' => $user->organization_id,
+                'amount' => $amount,
+                'commission_amount' => $commission,
+                'provider_amount' => $providerAmount,
+                'currency' => $quotation->currency,
+                'method' => $paymentMethod->code,
+                'status' => PaymentStatus::Processing,
+                'gateway' => $this->gatewayFor($paymentMethod),
+            ]
+        );
+
+        if ($payment->status === PaymentStatus::Failed) {
+            $payment->forceFill([
+                'status' => PaymentStatus::Processing,
+                'method' => $paymentMethod->code,
+                'gateway' => $this->gatewayFor($paymentMethod),
+            ])->save();
+        } elseif ($payment->status !== PaymentStatus::Completed && $payment->method !== $paymentMethod->code) {
+            $payment->forceFill([
+                'method' => $paymentMethod->code,
+                'gateway' => $this->gatewayFor($paymentMethod),
+            ])->save();
+        }
+
+        return $payment;
+    }
+
+    /**
+     * @return array{amount: float, commission_amount: float, provider_amount: float}
+     */
+    private function amountsFor(Quotation $quotation, ?Payment $payment): array
+    {
+        if ($payment) {
+            return [
+                'amount' => (float) $payment->amount,
+                'commission_amount' => (float) $payment->commission_amount,
+                'provider_amount' => (float) $payment->provider_amount,
+            ];
+        }
+
+        $amount = (float) $quotation->total_price;
+        $commission = round($amount * $quotation->providerOrganization->commissionRate(), 3);
+
+        return [
+            'amount' => $amount,
+            'commission_amount' => $commission,
+            'provider_amount' => round($amount - $commission, 3),
+        ];
+    }
+
+    private function captureWithMethod(Payment $payment, PaymentMethod $paymentMethod): void
+    {
+        if ($paymentMethod->isCash()) {
+            $this->paymentGateway->captureOffline($payment, 'cash');
+
+            return;
+        }
+
+        $this->paymentGateway->capture($payment);
+    }
+
+    private function assertInvoicePayable(User $user, Invoice $invoice): void
+    {
+        if ($invoice->type !== InvoiceType::Customer) {
+            throw ValidationException::withMessages([
+                'invoice' => ['Only customer invoices can be paid here.'],
+            ]);
+        }
+
+        if ($invoice->status === InvoiceStatus::Paid) {
+            throw ValidationException::withMessages([
+                'invoice' => ['This invoice has already been paid.'],
+            ]);
+        }
+
+        if ($invoice->status !== InvoiceStatus::Issued) {
+            throw ValidationException::withMessages([
+                'invoice' => ['This invoice cannot be paid.'],
+            ]);
+        }
+
+        if ($invoice->organization_id !== $user->organization_id) {
+            throw ValidationException::withMessages([
+                'invoice' => ['You can only pay invoices issued to your organization.'],
+            ]);
+        }
+
+        $job = $invoice->transportJob;
+        $unitComplete = $invoice->trip_id
+            ? Trip::query()->whereKey($invoice->trip_id)->where('status', TripStatus::Completed)->exists()
+            : ($job && $job->status === JobStatus::Completed);
+
+        if (! $unitComplete || $invoice->due_at === null) {
+            throw ValidationException::withMessages([
+                'invoice' => ['This invoice becomes payable after the shipment is delivered.'],
+            ]);
+        }
     }
 
     private function assertQuotationCanBeAwarded(User $user, Quotation $quotation): void

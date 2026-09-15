@@ -2,7 +2,10 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\BillingTrigger;
+use App\Enums\BillingUnit;
 use App\Enums\JobStatus;
+use App\Enums\PaymentContractRequestStatus;
 use App\Enums\PaymentStatus;
 use App\Enums\QuotationStatus;
 use App\Enums\ShipmentStatus;
@@ -33,6 +36,10 @@ class CatalogController extends Controller
             'job_statuses' => JobStatus::cases(),
             'trip_statuses' => TripStatus::cases(),
             'payment_statuses' => PaymentStatus::cases(),
+            'billing_triggers' => BillingTrigger::cases(),
+            'billing_units' => BillingUnit::cases(),
+            'payment_contract_request_statuses' => PaymentContractRequestStatus::cases(),
+            'payment_due_days_max' => config('mz.payment_due_days_max', 730),
             'truck_types' => TruckTypeResource::collection($this->truckTypes->visibleActive($user))->resolve(),
             'payment_methods' => PaymentMethodResource::collection($this->paymentMethods->active())->resolve(),
             'currency' => config('mz.currency'),

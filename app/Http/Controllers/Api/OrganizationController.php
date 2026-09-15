@@ -7,6 +7,7 @@ use App\Enums\OrganizationStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\OrganizationResource;
 use App\Models\Organization;
+use App\Services\PaymentContractService;
 use App\Support\ApiResponse;
 use App\Support\AuditLogger;
 use App\Support\ListFilters;
@@ -18,6 +19,8 @@ use Illuminate\Validation\ValidationException;
 
 class OrganizationController extends Controller
 {
+    public function __construct(private readonly PaymentContractService $paymentContracts) {}
+
     public function customers(Request $request): JsonResponse
     {
         abort_unless($request->user()->can(Permissions::CUSTOMERS_VIEW), 403);
@@ -72,7 +75,10 @@ class OrganizationController extends Controller
     public function show(Request $request, Organization $organization): JsonResponse
     {
         $this->assertCanView($request, $organization);
-        $organization->load(['users', 'trucks', 'documents', 'driverProfiles.user']);
+        if ($organization->isCustomer()) {
+            $this->paymentContracts->ensureForCustomer($organization);
+        }
+        $organization->load(['users', 'trucks', 'documents', 'driverProfiles.user', 'paymentContract']);
 
         return ApiResponse::success(OrganizationResource::make($organization)->additional([
             'users' => $organization->users,

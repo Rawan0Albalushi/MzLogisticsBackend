@@ -46,11 +46,15 @@ class PlacesController extends Controller
             'lng' => ['required', 'numeric', 'between:-180,180'],
         ]);
 
-        return $this->handle(fn () => $this->places->reverse(
-            (float) $data['lat'],
-            (float) $data['lng'],
-            $this->language($request),
-        ) ?? []);
+        try {
+            return ApiResponse::success($this->places->reverse(
+                (float) $data['lat'],
+                (float) $data['lng'],
+                $this->language($request),
+            ) ?? []);
+        } catch (RuntimeException $exception) {
+            return ApiResponse::error($exception->getMessage(), 502);
+        }
     }
 
     private function language(Request $request): string

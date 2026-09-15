@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\BillingTrigger;
+use App\Enums\BillingUnit;
 use App\Enums\QuantityUnit;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -42,17 +44,20 @@ class StoreShipmentRequest extends FormRequest
             'volume_cbm' => ['nullable', 'numeric', 'min:0'],
             'quantity' => ['required', 'numeric', 'min:0.1'],
             'quantity_unit' => ['required', 'string', Rule::enum(QuantityUnit::class)],
-            'pickup_address' => ['required', 'string', 'max:255'],
+            'pickup_address' => ['nullable', 'string', 'max:255'],
             'pickup_city' => ['required', 'string', 'max:120'],
             'pickup_lat' => ['nullable', 'numeric', 'between:-90,90', 'required_with:pickup_lng'],
             'pickup_lng' => ['nullable', 'numeric', 'between:-180,180', 'required_with:pickup_lat'],
-            'delivery_address' => ['required', 'string', 'max:255'],
+            'delivery_address' => ['nullable', 'string', 'max:255'],
             'delivery_city' => ['required', 'string', 'max:120'],
             'delivery_lat' => ['nullable', 'numeric', 'between:-90,90', 'required_with:delivery_lng'],
             'delivery_lng' => ['nullable', 'numeric', 'between:-180,180', 'required_with:delivery_lat'],
             'required_date' => ['required', 'date', 'after_or_equal:today'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'publish' => ['sometimes', 'boolean'],
+            'billing_trigger' => ['sometimes', Rule::enum(BillingTrigger::class)],
+            'billing_unit' => ['nullable', Rule::enum(BillingUnit::class)],
+            'due_days' => ['nullable', 'integer', 'min:0', 'max:'.config('mz.payment_due_days_max', 730)],
         ];
     }
 }

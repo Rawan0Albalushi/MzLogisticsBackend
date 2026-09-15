@@ -17,6 +17,7 @@ use App\Models\Organization;
 use App\Models\Truck;
 use App\Models\User;
 use App\Services\JobOrchestrationService;
+use App\Services\PaymentContractService;
 use App\Services\QuotationService;
 use App\Services\ShipmentService;
 use App\Services\TripService;
@@ -76,6 +77,7 @@ class DemoDataSeeder extends Seeder
             'is_active' => true,
         ]);
         $customer->assignRole('Company Admin');
+        app(PaymentContractService::class)->ensureForCustomer($customerOrg);
 
         $providerOrg = Organization::query()->create([
             'type' => OrganizationType::Provider,
@@ -128,6 +130,11 @@ class DemoDataSeeder extends Seeder
             'plate_number' => 'H 45882',
             'type' => TruckType::Flatbed->value,
             'capacity_tons' => 30,
+            'volume_cbm' => 86,
+            'cargo_length_m' => 13.6,
+            'cargo_width_m' => 2.45,
+            'cargo_height_m' => 2.70,
+            'axle_count' => 4,
             'year' => 2022,
             'make' => 'Mercedes-Benz',
             'model' => 'Actros',
@@ -140,6 +147,11 @@ class DemoDataSeeder extends Seeder
             'plate_number' => 'H 77120',
             'type' => TruckType::Box->value,
             'capacity_tons' => 18,
+            'volume_cbm' => 48,
+            'cargo_length_m' => 7.2,
+            'cargo_width_m' => 2.40,
+            'cargo_height_m' => 2.50,
+            'axle_count' => 3,
             'year' => 2021,
             'make' => 'Volvo',
             'model' => 'FH',

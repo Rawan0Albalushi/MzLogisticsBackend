@@ -18,8 +18,11 @@ class InvoiceResource extends JsonResource
             'status' => $this->status,
             'issued_at' => $this->issued_at,
             'due_at' => $this->due_at,
+            'payable' => $this->isPayable(),
+            'trip_id' => $this->trip_id,
             'organization' => OrganizationResource::make($this->whenLoaded('organization')),
             'job' => JobResource::make($this->whenLoaded('transportJob')),
+            'trip' => TripResource::make($this->whenLoaded('trip')),
             'payment' => PaymentResource::make($this->whenLoaded('payment')),
         ];
     }

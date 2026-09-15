@@ -14,6 +14,11 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
     'plate_number',
     'type',
     'capacity_tons',
+    'volume_cbm',
+    'cargo_length_m',
+    'cargo_width_m',
+    'cargo_height_m',
+    'axle_count',
     'year',
     'make',
     'model',
@@ -28,6 +33,11 @@ class Truck extends Model
         return [
             'status' => TruckStatus::class,
             'capacity_tons' => 'decimal:2',
+            'volume_cbm' => 'decimal:2',
+            'cargo_length_m' => 'decimal:2',
+            'cargo_width_m' => 'decimal:2',
+            'cargo_height_m' => 'decimal:2',
+            'axle_count' => 'integer',
             'insurance_expires_at' => 'date',
         ];
     }

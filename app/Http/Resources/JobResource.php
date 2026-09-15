@@ -25,6 +25,7 @@ class JobResource extends JsonResource
             'shipment' => ShipmentResource::make($this->whenLoaded('shipmentRequest')),
             'quotation' => QuotationResource::make($this->whenLoaded('quotation')),
             'trips' => TripResource::collection($this->whenLoaded('trips')),
+            'invoices' => InvoiceResource::collection($this->whenLoaded('invoices')),
             'created_at' => $this->created_at,
         ];
     }
