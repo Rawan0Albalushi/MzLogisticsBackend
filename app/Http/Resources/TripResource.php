@@ -2,7 +2,6 @@
 
 namespace App\Http\Resources;
 
-use App\Enums\UserType;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -10,12 +9,8 @@ class TripResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        $user = $request->user();
-        $canSeeOtp = $user && (
-            $user->user_type === UserType::Driver
-            || $user->user_type === UserType::Provider
-            || $user->user_type === UserType::Platform
-        );
+        $otpRequired = $this->hasActiveDeliveryOtp();
+        $canSeeOtp = $otpRequired && $request->user()?->isCustomer();
 
         return [
             'id' => $this->id,
@@ -35,6 +30,7 @@ class TripResource extends JsonResource
             'current_lat' => $this->current_lat,
             'current_lng' => $this->current_lng,
             'eta_at' => $this->eta_at,
+            'otp_required' => $otpRequired,
             'otp_code' => $this->when($canSeeOtp, $this->otp_code),
             'assigned_at' => $this->assigned_at,
             'arrived_pickup_at' => $this->arrived_pickup_at,

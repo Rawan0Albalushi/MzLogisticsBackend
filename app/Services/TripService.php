@@ -18,7 +18,9 @@ use App\Support\ReferenceGenerator;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class TripService
 {
@@ -170,7 +172,7 @@ class TripService
             ]);
         }
 
-        if (($payload['otp'] ?? null) !== $trip->otp_code) {
+        if (! $this->otpMatches($trip, (string) ($payload['otp'] ?? ''))) {
             throw ValidationException::withMessages([
                 'otp' => ['The delivery OTP is invalid.'],
             ]);
@@ -211,6 +213,22 @@ class TripService
 
             return $pod->fresh('trip');
         });
+    }
+
+    public function streamPodPhoto(Trip $trip, int $index): StreamedResponse
+    {
+        $trip->loadMissing('proofOfDelivery');
+        $paths = array_values($trip->proofOfDelivery?->photo_paths ?? []);
+        $path = $paths[$index] ?? null;
+
+        return $this->streamPodFile(is_string($path) ? $path : null);
+    }
+
+    public function streamPodSignature(Trip $trip): StreamedResponse
+    {
+        $trip->loadMissing('proofOfDelivery');
+
+        return $this->streamPodFile($trip->proofOfDelivery?->signature_path);
     }
 
     public function recordLocation(User $user, Trip $trip, float $lat, float $lng, ?string $etaAt = null): Trip
@@ -318,5 +336,35 @@ class TripService
         if ($trip->driver?->driverProfile && ! Trip::query()->where('driver_user_id', $trip->driver_user_id)->whereNotIn('status', [TripStatus::Completed, TripStatus::Cancelled])->exists()) {
             $trip->driver->driverProfile->forceFill(['status' => DriverStatus::Available])->save();
         }
+    }
+
+    private function otpMatches(Trip $trip, string $provided): bool
+    {
+        if ($trip->otp_code !== null && $trip->otp_code !== '' && hash_equals((string) $trip->otp_code, $provided)) {
+            return true;
+        }
+
+        if (! config('mz.allow_test_otp')) {
+            return false;
+        }
+
+        $testOtp = (string) config('mz.test_otp', '123456');
+
+        return $testOtp !== '' && hash_equals($testOtp, $provided);
+    }
+
+    private function streamPodFile(?string $path): StreamedResponse
+    {
+        abort_unless(filled($path), 404);
+
+        foreach (['local', 'public'] as $disk) {
+            if (Storage::disk($disk)->exists($path)) {
+                return Storage::disk($disk)->response($path, null, [
+                    'Cache-Control' => 'private, max-age=3600',
+                ]);
+            }
+        }
+
+        abort(404);
     }
 }

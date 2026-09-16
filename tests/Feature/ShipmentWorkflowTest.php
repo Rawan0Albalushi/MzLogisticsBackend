@@ -273,6 +273,126 @@ class ShipmentWorkflowTest extends TestCase
         ])->assertStatus(422);
     }
 
+    public function test_delivery_otp_is_visible_only_to_the_customer(): void
+    {
+        [$customer, $provider, $driver, $truck] = $this->makeCustomerAndProvider(true);
+
+        $shipment = $this->actingAs($customer, 'sanctum')->postJson('/api/v1/shipments', [
+            'cargo_type' => 'Cement',
+            'weight_tons' => 12,
+            'quantity' => 12,
+            'pickup_address' => 'Muscat',
+            'pickup_city' => 'Muscat',
+            'delivery_address' => 'Nizwa',
+            'delivery_city' => 'Nizwa',
+            'required_date' => now()->addDay()->toDateString(),
+            'publish' => true,
+        ])->json('data');
+
+        $quotation = $this->actingAs($provider, 'sanctum')->postJson("/api/v1/shipments/{$shipment['id']}/quotations", [
+            'total_price' => 900,
+            'truck_count' => 1,
+            'truck_type' => TruckType::Flatbed->value,
+            'truck_capacity_tons' => 30,
+            'trip_count' => 1,
+            'quantity_per_trip' => 12,
+            'duration_days' => 4,
+        ])->json('data');
+
+        $job = $this->actingAs($customer, 'sanctum')
+            ->postJson("/api/v1/quotations/{$quotation['id']}/accept")
+            ->json('data');
+
+        $tripId = $job['trips'][0]['id'];
+
+        $assigned = $this->actingAs($provider, 'sanctum')
+            ->postJson("/api/v1/trips/{$tripId}/assign", [
+                'truck_id' => $truck->id,
+                'driver_id' => $driver->id,
+            ])
+            ->assertOk();
+
+        $assigned->assertJsonPath('data.otp_required', true);
+        $this->assertArrayNotHasKey('otp_code', $assigned->json('data'));
+
+        $this->actingAs($driver, 'sanctum')
+            ->getJson("/api/v1/trips/{$tripId}")
+            ->assertOk()
+            ->assertJsonPath('data.otp_required', true)
+            ->assertJsonMissingPath('data.otp_code');
+
+        $customerView = $this->actingAs($customer, 'sanctum')
+            ->getJson("/api/v1/trips/{$tripId}")
+            ->assertOk()
+            ->assertJsonPath('data.otp_required', true);
+
+        $otp = $customerView->json('data.otp_code');
+        $this->assertIsString($otp);
+        $this->assertMatchesRegularExpression('/^\d{6}$/', $otp);
+        $this->assertDatabaseHas('trips', [
+            'id' => $tripId,
+            'otp_code' => $otp,
+        ]);
+    }
+
+    public function test_driver_can_submit_pod_with_the_test_otp(): void
+    {
+        [$customer, $provider, $driver, $truck] = $this->makeCustomerAndProvider(true);
+
+        $shipment = $this->actingAs($customer, 'sanctum')->postJson('/api/v1/shipments', [
+            'cargo_type' => 'Gravel',
+            'weight_tons' => 10,
+            'quantity' => 10,
+            'pickup_address' => 'Sohar',
+            'pickup_city' => 'Sohar',
+            'delivery_address' => 'Nizwa',
+            'delivery_city' => 'Nizwa',
+            'required_date' => now()->addDay()->toDateString(),
+            'publish' => true,
+        ])->json('data');
+
+        $quotation = $this->actingAs($provider, 'sanctum')->postJson("/api/v1/shipments/{$shipment['id']}/quotations", [
+            'total_price' => 500,
+            'truck_count' => 1,
+            'truck_type' => TruckType::Flatbed->value,
+            'truck_capacity_tons' => 30,
+            'trip_count' => 1,
+            'quantity_per_trip' => 10,
+            'duration_days' => 2,
+        ])->json('data');
+
+        $job = $this->actingAs($customer, 'sanctum')
+            ->postJson("/api/v1/quotations/{$quotation['id']}/accept")
+            ->json('data');
+
+        $tripId = $job['trips'][0]['id'];
+
+        $this->actingAs($provider, 'sanctum')->postJson("/api/v1/trips/{$tripId}/assign", [
+            'truck_id' => $truck->id,
+            'driver_id' => $driver->id,
+        ])->assertOk();
+
+        foreach ([
+            TripStatus::ArrivedAtPickup,
+            TripStatus::Loaded,
+            TripStatus::InTransit,
+            TripStatus::Arrived,
+        ] as $status) {
+            $this->actingAs($driver, 'sanctum')
+                ->postJson("/api/v1/trips/{$tripId}/status", ['status' => $status->value])
+                ->assertOk();
+        }
+
+        $this->actingAs($driver, 'sanctum')
+            ->postJson("/api/v1/trips/{$tripId}/pod", [
+                'receiver_name' => 'Ali',
+                'otp' => '123456',
+                'received_quantity' => 10,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.otp_verified', true);
+    }
+
     public function test_provider_cannot_see_another_providers_quotation(): void
     {
         [$customer, $provider] = $this->makeCustomerAndProvider();

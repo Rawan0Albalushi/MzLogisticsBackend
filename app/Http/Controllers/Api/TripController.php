@@ -13,6 +13,7 @@ use App\Services\TripService;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class TripController extends Controller
 {
@@ -96,5 +97,19 @@ class TripController extends Controller
         );
 
         return ApiResponse::success($pod, 'Proof of delivery recorded.', 201);
+    }
+
+    public function podPhoto(Trip $trip, int $index): StreamedResponse
+    {
+        $this->authorize('view', $trip);
+
+        return $this->trips->streamPodPhoto($trip, $index);
+    }
+
+    public function podSignature(Trip $trip): StreamedResponse
+    {
+        $this->authorize('view', $trip);
+
+        return $this->trips->streamPodSignature($trip);
     }
 }

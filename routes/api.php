@@ -72,6 +72,8 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/trips/{trip}/status', [TripController::class, 'updateStatus']);
         Route::post('/trips/{trip}/location', [TripController::class, 'location']);
         Route::post('/trips/{trip}/pod', [TripController::class, 'storePod']);
+        Route::get('/trips/{trip}/pod/photos/{index}', [TripController::class, 'podPhoto'])->whereNumber('index');
+        Route::get('/trips/{trip}/pod/signature', [TripController::class, 'podSignature']);
 
         Route::get('/truck-types', [TruckTypeController::class, 'index']);
         Route::post('/truck-types', [TruckTypeController::class, 'store']);

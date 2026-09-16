@@ -33,5 +33,7 @@
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
         <env name="MZ_SANDBOX_PAYMENTS" value="true"/>
+        <env name="MZ_ALLOW_TEST_OTP" value="true"/>
+        <env name="MZ_TEST_OTP" value="123456"/>
     </php>
 </phpunit>

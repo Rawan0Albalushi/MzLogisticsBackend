@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\TripStatus;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -30,7 +31,6 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'current_lat',
     'current_lng',
     'eta_at',
-    'otp_code',
     'assigned_at',
     'arrived_pickup_at',
     'loaded_at',
@@ -39,6 +39,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'delivered_at',
     'completed_at',
 ])]
+#[Hidden(['otp_code'])]
 class Trip extends Model
 {
     protected function casts(): array
@@ -92,5 +93,22 @@ class Trip extends Model
     public function proofOfDelivery(): HasOne
     {
         return $this->hasOne(ProofOfDelivery::class);
+    }
+
+    public function hasActiveDeliveryOtp(): bool
+    {
+        if (! filled($this->otp_code)) {
+            return false;
+        }
+
+        if (in_array($this->status, [TripStatus::Delivered, TripStatus::Completed, TripStatus::Cancelled], true)) {
+            return false;
+        }
+
+        if ($this->relationLoaded('proofOfDelivery') && $this->proofOfDelivery?->otp_verified) {
+            return false;
+        }
+
+        return true;
     }
 }
