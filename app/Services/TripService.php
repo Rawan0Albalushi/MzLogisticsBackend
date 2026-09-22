@@ -206,7 +206,11 @@ class TripService
             ])->save();
 
             if ($trip->status === TripStatus::Arrived) {
-                $this->transition($user, $trip->fresh(), TripStatus::Delivered);
+                $trip = $this->transition($user, $trip->fresh(), TripStatus::Delivered);
+            }
+
+            if ($trip->status === TripStatus::Delivered) {
+                $this->transition($user, $trip, TripStatus::Completed);
             }
 
             AuditLogger::record('pod.created', $pod, [], $pod->toArray(), $user);

@@ -57,6 +57,11 @@ class Truck extends Model
         return $this->hasMany(Trip::class);
     }
 
+    public function equipment(): HasMany
+    {
+        return $this->hasMany(Equipment::class);
+    }
+
     public function documents(): MorphMany
     {
         return $this->morphMany(Document::class, 'documentable');

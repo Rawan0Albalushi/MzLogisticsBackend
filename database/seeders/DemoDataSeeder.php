@@ -167,6 +167,15 @@ class DemoDataSeeder extends Seeder
             'status' => EquipmentStatus::Available,
         ]);
 
+        Equipment::query()->create([
+            'organization_id' => $providerOrg->id,
+            'truck_id' => $truck->id,
+            'name' => 'Truck-mounted crane',
+            'type' => 'lifting',
+            'quantity' => 1,
+            'status' => EquipmentStatus::Available,
+        ]);
+
         $shipmentService = app(ShipmentService::class);
         $quotationService = app(QuotationService::class);
         $jobService = app(JobOrchestrationService::class);

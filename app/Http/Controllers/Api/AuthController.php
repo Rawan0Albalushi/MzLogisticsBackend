@@ -41,12 +41,27 @@ class AuthController extends Controller
 
     public function login(LoginRequest $request): JsonResponse
     {
-        $result = $this->authService->login($request->string('email')->toString(), $request->string('password')->toString());
+        $result = $this->authService->login($request->identifier(), $request->string('password')->toString());
 
         return ApiResponse::success([
             'token' => $result['token'],
             'user' => UserResource::make($result['user']),
         ], 'Signed in.');
+    }
+
+    public function activateDriver(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'token' => ['required', 'string'],
+            'password' => ['required', 'confirmed', PasswordRule::min(8)],
+        ]);
+
+        $result = $this->authService->activateDriver($data['token'], $data['password']);
+
+        return ApiResponse::success([
+            'token' => $result['token'],
+            'user' => UserResource::make($result['user']),
+        ], 'Account activated.');
     }
 
     public function logout(Request $request): JsonResponse

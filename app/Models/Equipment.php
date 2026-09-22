@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
     'organization_id',
+    'truck_id',
     'name',
     'type',
     'quantity',
@@ -28,5 +29,10 @@ class Equipment extends Model
     public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class);
+    }
+
+    public function truck(): BelongsTo
+    {
+        return $this->belongsTo(Truck::class);
     }
 }

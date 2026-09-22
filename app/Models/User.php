@@ -23,6 +23,7 @@ use Spatie\Permission\Traits\HasRoles;
     'user_type',
     'organization_id',
     'is_active',
+    'must_set_password',
     'last_login_at',
     'password',
 ])]
@@ -41,6 +42,7 @@ class User extends Authenticatable
             'last_login_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'must_set_password' => 'boolean',
             'user_type' => UserType::class,
         ];
     }
@@ -53,6 +55,18 @@ class User extends Authenticatable
     public function driverProfile(): HasOne
     {
         return $this->hasOne(DriverProfile::class);
+    }
+
+    public function activationTokens(): HasMany
+    {
+        return $this->hasMany(DriverActivationToken::class);
+    }
+
+    public function usesTechnicalEmail(): bool
+    {
+        $domain = (string) config('mz.driver_activation.technical_email_domain', 'drivers.mz.local');
+
+        return str_ends_with((string) $this->email, '@'.$domain);
     }
 
     public function assignedTrips(): HasMany

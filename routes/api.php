@@ -32,6 +32,7 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/register/customer', [AuthController::class, 'registerCustomer']);
         Route::post('/register/provider', [AuthController::class, 'registerProvider']);
         Route::post('/login', [AuthController::class, 'login']);
+        Route::post('/driver/activate', [AuthController::class, 'activateDriver']);
         Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
         Route::post('/reset-password', [AuthController::class, 'resetPassword']);
     });
@@ -82,11 +83,19 @@ Route::prefix('v1')->group(function (): void {
 
         Route::get('/trucks', [FleetController::class, 'trucks']);
         Route::post('/trucks', [FleetController::class, 'storeTruck']);
+        Route::get('/trucks/import-template', [FleetController::class, 'truckImportTemplate']);
+        Route::post('/trucks/import', [FleetController::class, 'importTrucks']);
         Route::put('/trucks/{truck}', [FleetController::class, 'updateTruck']);
         Route::get('/equipment', [FleetController::class, 'equipment']);
         Route::post('/equipment', [FleetController::class, 'storeEquipment']);
+        Route::get('/equipment/import-template', [FleetController::class, 'equipmentImportTemplate']);
+        Route::post('/equipment/import', [FleetController::class, 'importEquipment']);
+        Route::put('/equipment/{equipment}', [FleetController::class, 'updateEquipment']);
         Route::get('/drivers', [FleetController::class, 'drivers']);
         Route::post('/drivers', [FleetController::class, 'storeDriver']);
+        Route::get('/drivers/import-template', [FleetController::class, 'importTemplate']);
+        Route::post('/drivers/import', [FleetController::class, 'importDrivers']);
+        Route::post('/drivers/{driver}/resend-invite', [FleetController::class, 'resendInvite']);
 
         Route::get('/customers', [OrganizationController::class, 'customers']);
         Route::get('/providers', [OrganizationController::class, 'providers']);

@@ -2,10 +2,14 @@
 
 namespace App\Providers;
 
+use App\Contracts\DriverInviteSender;
+use App\Enums\UserType;
 use App\Models\Quotation;
 use App\Models\ShipmentRequest;
 use App\Models\TransportJob;
 use App\Models\Trip;
+use App\Models\User;
+use App\Notifications\WhatsAppDriverInviteSender;
 use App\Policies\QuotationPolicy;
 use App\Policies\ShipmentRequestPolicy;
 use App\Policies\TransportJobPolicy;
@@ -21,7 +25,7 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        $this->app->bind(DriverInviteSender::class, WhatsAppDriverInviteSender::class);
     }
 
     public function boot(): void
@@ -37,5 +41,6 @@ class AppServiceProvider extends ServiceProvider
 
         Route::bind('shipment', fn (string $value) => ShipmentRequest::query()->findOrFail($value));
         Route::bind('job', fn (string $value) => TransportJob::query()->findOrFail($value));
+        Route::bind('driver', fn (string $value) => User::query()->where('user_type', UserType::Driver)->findOrFail($value));
     }
 }

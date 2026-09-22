@@ -150,8 +150,8 @@ class PaymentController extends Controller
         return view('payments.return', [
             'title' => $cancelled ? 'Payment cancelled' : 'Payment completed',
             'body' => $cancelled
-                ? 'You can return to the MZ Logistics app to choose another payment method.'
-                : 'Return to the MZ Logistics app to continue with your job.',
+                ? 'You can return to the MoveX app to choose another payment method.'
+                : 'Return to the MoveX app to continue with your job.',
             'button' => 'Return to the app',
             'deep_link' => $deepLink,
             'web_link' => $webLink,
