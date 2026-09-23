@@ -77,6 +77,60 @@ class DriverProvisioningService
     }
 
     /**
+     * @param  array{name: string, phone: string, email?: string|null, license_number?: string|null, license_expires_at?: string|null, status?: string|null}  $payload
+     */
+    public function update(User $actor, User $driver, array $payload): User
+    {
+        $this->assertCanManage($actor);
+        $this->assertSameOrganization($actor, $driver);
+
+        if (! $driver->isDriver()) {
+            abort(404);
+        }
+
+        $phone = PhoneNumber::normalize($payload['phone'] ?? null);
+        if ($phone === null) {
+            throw ValidationException::withMessages([
+                'phone' => ['A valid mobile number is required.'],
+            ]);
+        }
+
+        $this->assertPhoneAvailable($phone, $driver->id);
+
+        $emailInput = trim((string) ($payload['email'] ?? ''));
+        $email = $emailInput !== ''
+            ? strtolower($emailInput)
+            : $this->technicalEmail($phone);
+
+        if (User::query()->where('email', $email)->whereKeyNot($driver->id)->exists()) {
+            throw ValidationException::withMessages([
+                'email' => ['The email has already been taken.'],
+            ]);
+        }
+
+        return DB::transaction(function () use ($driver, $payload, $phone, $email) {
+            $driver->fill([
+                'name' => $payload['name'],
+                'email' => $email,
+                'phone' => $phone,
+            ])->save();
+
+            $profile = $driver->driverProfile ?? new DriverProfile([
+                'user_id' => $driver->id,
+                'organization_id' => $driver->organization_id,
+                'status' => DriverStatus::Available,
+            ]);
+            $profile->fill([
+                'license_number' => filled($payload['license_number'] ?? null) ? $payload['license_number'] : null,
+                'license_expires_at' => filled($payload['license_expires_at'] ?? null) ? $payload['license_expires_at'] : null,
+                'status' => $payload['status'] ?? $profile->status ?? DriverStatus::Available,
+            ])->save();
+
+            return $driver->refresh()->load('driverProfile');
+        });
+    }
+
+    /**
      * @return array{driver: User, invite_url: string, whatsapp_sent: bool}
      */
     public function resendInvite(User $actor, User $driver): array
@@ -142,11 +196,12 @@ class DriverProvisioningService
         return PhoneNumber::digits($normalizedPhone).'@'.$domain;
     }
 
-    private function assertPhoneAvailable(string $phone): void
+    private function assertPhoneAvailable(string $phone, ?int $ignoreUserId = null): void
     {
         $exists = User::query()
             ->where('user_type', UserType::Driver)
             ->where('phone', $phone)
+            ->when($ignoreUserId, fn ($query) => $query->whereKeyNot($ignoreUserId))
             ->exists();
 
         if ($exists) {

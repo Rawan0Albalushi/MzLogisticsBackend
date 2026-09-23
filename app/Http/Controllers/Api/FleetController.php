@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\DriverStatus;
 use App\Enums\EquipmentStatus;
 use App\Enums\UserType;
 use App\Http\Controllers\Controller;
@@ -194,6 +195,23 @@ class FleetController extends Controller
             'invite_url' => $result['invite_url'],
             'whatsapp_sent' => $result['whatsapp_sent'],
         ], 'Driver added.', 201);
+    }
+
+    public function updateDriver(Request $request, User $driver, DriverProvisioningService $provisioning): JsonResponse
+    {
+        $this->authorizePermission($request, Permissions::DRIVERS_MANAGE);
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
+            'email' => ['nullable', 'email', Rule::unique('users', 'email')->ignore($driver->id)],
+            'phone' => ['required', 'string', 'max:32'],
+            'license_number' => ['nullable', 'string', 'max:80'],
+            'license_expires_at' => ['nullable', 'date'],
+            'status' => ['nullable', Rule::enum(DriverStatus::class)],
+        ]);
+
+        $updated = $provisioning->update($request->user(), $driver, $data);
+
+        return ApiResponse::success(UserResource::make($updated), 'Driver updated.');
     }
 
     public function importTemplate(Request $request, DriverImportService $import): StreamedResponse

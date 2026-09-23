@@ -95,6 +95,7 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/drivers', [FleetController::class, 'storeDriver']);
         Route::get('/drivers/import-template', [FleetController::class, 'importTemplate']);
         Route::post('/drivers/import', [FleetController::class, 'importDrivers']);
+        Route::put('/drivers/{driver}', [FleetController::class, 'updateDriver']);
         Route::post('/drivers/{driver}/resend-invite', [FleetController::class, 'resendInvite']);
 
         Route::get('/customers', [OrganizationController::class, 'customers']);

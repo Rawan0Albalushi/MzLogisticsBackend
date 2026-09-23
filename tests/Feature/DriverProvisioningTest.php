@@ -120,6 +120,82 @@ class DriverProvisioningTest extends TestCase
         ])->assertOk()->assertJsonPath('data.user.user_type', 'customer');
     }
 
+    public function test_provider_can_update_driver_details(): void
+    {
+        $provider = $this->makeProvider();
+        $created = $this->actingAs($provider, 'sanctum')
+            ->postJson('/api/v1/drivers', [
+                'name' => 'Khalid Al Mamari',
+                'phone' => '99225511',
+                'license_number' => 'OM-DL-111',
+            ])
+            ->assertCreated();
+
+        $driverId = $created->json('data.driver.id');
+
+        $this->actingAs($provider, 'sanctum')
+            ->putJson("/api/v1/drivers/{$driverId}", [
+                'name' => 'Khalid Updated',
+                'phone' => '99225512',
+                'email' => 'khalid.driver@example.com',
+                'license_number' => 'OM-DL-222',
+                'license_expires_at' => '2027-04-01',
+                'status' => 'inactive',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.name', 'Khalid Updated')
+            ->assertJsonPath('data.phone', '+96899225512')
+            ->assertJsonPath('data.email', 'khalid.driver@example.com')
+            ->assertJsonPath('data.driver_profile.license_number', 'OM-DL-222')
+            ->assertJsonPath('data.driver_profile.status', 'inactive');
+    }
+
+    public function test_driver_update_rejects_a_phone_used_by_another_driver(): void
+    {
+        $provider = $this->makeProvider();
+        $this->actingAs($provider, 'sanctum')
+            ->postJson('/api/v1/drivers', [
+                'name' => 'First',
+                'phone' => '99225513',
+            ])
+            ->assertCreated();
+
+        $second = $this->actingAs($provider, 'sanctum')
+            ->postJson('/api/v1/drivers', [
+                'name' => 'Second',
+                'phone' => '99225514',
+            ])
+            ->assertCreated();
+
+        $this->actingAs($provider, 'sanctum')
+            ->putJson('/api/v1/drivers/'.$second->json('data.driver.id'), [
+                'name' => 'Second',
+                'phone' => '99225513',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['phone']);
+    }
+
+    public function test_provider_cannot_update_another_companys_driver(): void
+    {
+        $owner = $this->makeProvider();
+        $created = $this->actingAs($owner, 'sanctum')
+            ->postJson('/api/v1/drivers', [
+                'name' => 'Owned Driver',
+                'phone' => '99225515',
+            ])
+            ->assertCreated();
+
+        $other = $this->makeProvider('other@example.com', 'Other Haul');
+
+        $this->actingAs($other, 'sanctum')
+            ->putJson('/api/v1/drivers/'.$created->json('data.driver.id'), [
+                'name' => 'Taken Over',
+                'phone' => '99225516',
+            ])
+            ->assertForbidden();
+    }
+
     public function test_provider_can_resend_pending_invite(): void
     {
         $provider = $this->makeProvider();
@@ -141,16 +217,16 @@ class DriverProvisioningTest extends TestCase
         $this->assertSame(1, DriverActivationToken::query()->whereNull('used_at')->count());
     }
 
-    private function makeProvider(): User
+    private function makeProvider(string $email = 'provider@example.com', string $name = 'Fast Haul'): User
     {
         $organization = Organization::query()->create([
             'type' => OrganizationType::Provider,
             'account_type' => AccountType::Company,
-            'name' => 'Fast Haul',
+            'name' => $name,
             'status' => OrganizationStatus::Active,
         ]);
         $provider = User::factory()->create([
-            'email' => 'provider@example.com',
+            'email' => $email,
             'user_type' => UserType::Provider,
             'organization_id' => $organization->id,
         ]);
