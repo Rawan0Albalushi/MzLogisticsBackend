@@ -31,6 +31,7 @@ class UserResource extends JsonResource
                 fn () => $this->getAllPermissions()->pluck('name')->values()
             ),
             'driver_profile' => $this->whenLoaded('driverProfile'),
+            'documents' => DocumentResource::collection($this->whenLoaded('documents')),
             'last_login_at' => $this->last_login_at,
         ];
     }

@@ -83,7 +83,6 @@ class OrganizationController extends Controller
         return ApiResponse::success(OrganizationResource::make($organization)->additional([
             'users' => $organization->users,
             'trucks' => $organization->trucks,
-            'documents' => $organization->documents,
         ]));
     }
 

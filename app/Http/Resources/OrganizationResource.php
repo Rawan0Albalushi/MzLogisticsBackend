@@ -28,6 +28,7 @@ class OrganizationResource extends JsonResource
             'effective_commission_rate' => $this->resource->commissionRate(),
             'uses_default_commission' => $this->commission_rate === null,
             'payment_contract' => PaymentContractResource::make($this->whenLoaded('paymentContract')),
+            'documents' => DocumentResource::collection($this->whenLoaded('documents')),
             'created_at' => $this->created_at,
         ];
     }

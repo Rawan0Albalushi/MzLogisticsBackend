@@ -31,7 +31,7 @@ class FleetController extends Controller
     {
         $this->authorizePermission($request, Permissions::FLEET_VIEW);
         $trucks = Truck::query()
-            ->with(['assignedDriver', 'organization', 'equipment'])
+            ->with(['assignedDriver', 'organization', 'equipment', 'documents'])
             ->when(! $request->user()->isPlatform(), fn ($q) => $q->where('organization_id', $request->user()->organization_id))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($request->filled('organization_id') && $request->user()->isPlatform(), fn ($q) => $q->where('organization_id', $request->integer('organization_id')))
@@ -91,7 +91,7 @@ class FleetController extends Controller
         $this->assertFleetOwnership($request, $truck->organization_id);
         $truck->fill($request->safe()->except('organization_id'))->save();
 
-        return ApiResponse::success(TruckResource::make($truck->fresh(['assignedDriver', 'equipment'])), 'Truck updated.');
+        return ApiResponse::success(TruckResource::make($truck->fresh(['assignedDriver', 'equipment', 'documents'])), 'Truck updated.');
     }
 
     public function equipment(Request $request): JsonResponse
@@ -158,7 +158,7 @@ class FleetController extends Controller
         $this->authorizePermission($request, Permissions::DRIVERS_VIEW);
         $drivers = User::query()
             ->where('user_type', UserType::Driver)
-            ->with('driverProfile')
+            ->with(['driverProfile', 'documents'])
             ->when(! $request->user()->isPlatform(), fn ($q) => $q->where('organization_id', $request->user()->organization_id))
             ->when($request->filled('search'), function ($q) use ($request) {
                 ListFilters::search(

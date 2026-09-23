@@ -28,6 +28,7 @@ class TruckResource extends JsonResource
             'assigned_driver_id' => $this->assigned_driver_id,
             'assigned_driver' => UserResource::make($this->whenLoaded('assignedDriver')),
             'equipment' => EquipmentResource::collection($this->whenLoaded('equipment')),
+            'documents' => DocumentResource::collection($this->whenLoaded('documents')),
             'insurance_expires_at' => $this->insurance_expires_at?->toDateString(),
             'organization' => OrganizationResource::make($this->whenLoaded('organization')),
         ];

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CatalogController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\FinanceController;
 use App\Http\Controllers\Api\FleetController;
 use App\Http\Controllers\Api\JobController;
@@ -86,6 +87,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/trucks/import-template', [FleetController::class, 'truckImportTemplate']);
         Route::post('/trucks/import', [FleetController::class, 'importTrucks']);
         Route::put('/trucks/{truck}', [FleetController::class, 'updateTruck']);
+        Route::post('/trucks/{truck}/documents', [DocumentController::class, 'storeForTruck']);
         Route::get('/equipment', [FleetController::class, 'equipment']);
         Route::post('/equipment', [FleetController::class, 'storeEquipment']);
         Route::get('/equipment/import-template', [FleetController::class, 'equipmentImportTemplate']);
@@ -97,10 +99,13 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/drivers/import', [FleetController::class, 'importDrivers']);
         Route::put('/drivers/{driver}', [FleetController::class, 'updateDriver']);
         Route::post('/drivers/{driver}/resend-invite', [FleetController::class, 'resendInvite']);
+        Route::post('/drivers/{driver}/documents', [DocumentController::class, 'storeForDriver']);
 
         Route::get('/customers', [OrganizationController::class, 'customers']);
         Route::get('/providers', [OrganizationController::class, 'providers']);
+        Route::get('/documents/{document}/file', [DocumentController::class, 'download']);
         Route::get('/organizations/{organization}', [OrganizationController::class, 'show']);
+        Route::post('/organizations/{organization}/documents', [DocumentController::class, 'storeForOrganization']);
         Route::patch('/organizations/{organization}', [OrganizationController::class, 'update']);
         Route::patch('/organizations/{organization}/commission-rate', [OrganizationController::class, 'updateCommissionRate']);
         Route::post('/organizations/{organization}/verify', [OrganizationController::class, 'verify']);
