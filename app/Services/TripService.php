@@ -15,8 +15,10 @@ use App\Models\User;
 use App\Support\AuditLogger;
 use App\Support\ListFilters;
 use App\Support\ReferenceGenerator;
+use Carbon\CarbonInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -30,7 +32,7 @@ class TripService
     ) {}
 
     /**
-     * @param  array{truck_id: int, driver_id: int}  $payload
+     * @param  array{truck_id: int, driver_id: int, departure_time: string}  $payload
      */
     public function assign(User $user, Trip $trip, array $payload): Trip
     {
@@ -92,13 +94,16 @@ class TripService
             ]);
         }
 
-        return DB::transaction(function () use ($user, $trip, $truck, $driver, $profile) {
+        $departure = $this->scheduledDeparture($trip, (string) ($payload['departure_time'] ?? ''));
+
+        return DB::transaction(function () use ($user, $trip, $truck, $driver, $profile, $departure) {
             $trip->forceFill([
                 'truck_id' => $truck->id,
                 'driver_user_id' => $driver->id,
                 'assigned_by' => $user->id,
                 'status' => TripStatus::Assigned,
                 'assigned_at' => now(),
+                'scheduled_departure_at' => $departure,
                 'otp_code' => $trip->otp_code ?: ReferenceGenerator::otp(),
             ])->save();
 
@@ -120,6 +125,7 @@ class TripService
             AuditLogger::record('trip.assigned', $trip, [], [
                 'truck_id' => $truck->id,
                 'driver_id' => $driver->id,
+                'scheduled_departure_at' => $departure->toIso8601String(),
             ], $user);
 
             return $trip->fresh(['truck', 'driver', 'transportJob']);
@@ -342,6 +348,39 @@ class TripService
         if ($trip->driver?->driverProfile && ! Trip::query()->where('driver_user_id', $trip->driver_user_id)->whereNotIn('status', [TripStatus::Completed, TripStatus::Cancelled])->exists()) {
             $trip->driver->driverProfile->forceFill(['status' => DriverStatus::Available])->save();
         }
+    }
+
+    private function scheduledDeparture(Trip $trip, string $time): CarbonInterface
+    {
+        if (! preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time)) {
+            throw ValidationException::withMessages([
+                'departure_time' => ['The departure time must use the 24-hour format HH:MM.'],
+            ]);
+        }
+
+        $trip->loadMissing('transportJob.shipmentRequest');
+        $requiredDate = $trip->transportJob?->shipmentRequest?->required_date?->toDateString();
+        if ($requiredDate === null || $requiredDate === '') {
+            throw ValidationException::withMessages([
+                'departure_time' => ['This shipment has no required date.'],
+            ]);
+        }
+
+        $zone = (string) config('mz.business_timezone', 'Asia/Muscat');
+        $departure = Carbon::createFromFormat('Y-m-d H:i:s', $requiredDate.' '.$time.':00', $zone);
+        if (! $departure instanceof CarbonInterface) {
+            throw ValidationException::withMessages([
+                'departure_time' => ['The departure time is not valid.'],
+            ]);
+        }
+
+        if ($departure->lessThanOrEqualTo(now())) {
+            throw ValidationException::withMessages([
+                'departure_time' => ['The departure time must be later than now on the customer required date.'],
+            ]);
+        }
+
+        return $departure->timezone((string) config('app.timezone'));
     }
 
     private function otpMatches(Trip $trip, string $provided): bool

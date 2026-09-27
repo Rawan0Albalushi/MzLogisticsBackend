@@ -11,6 +11,7 @@ return [
     ),
     'test_otp' => (string) env('MZ_TEST_OTP', '123456'),
     'default_locale' => env('MZ_DEFAULT_LOCALE', 'ar'),
+    'business_timezone' => env('MZ_BUSINESS_TIMEZONE', 'Asia/Muscat'),
     'payment_due_days_max' => (int) env('MZ_PAYMENT_DUE_DAYS_MAX', 730),
     'driver_activation' => [
         'expires_days' => (int) env('DRIVER_ACTIVATION_EXPIRES_DAYS', 7),

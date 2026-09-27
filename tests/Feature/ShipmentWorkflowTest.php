@@ -12,11 +12,13 @@ use App\Enums\TruckType;
 use App\Enums\UserType;
 use App\Models\DriverProfile;
 use App\Models\Organization;
+use App\Models\Trip;
 use App\Models\Truck;
 use App\Models\User;
 use Database\Seeders\PaymentMethodSeeder;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Tests\TestCase;
 
 class ShipmentWorkflowTest extends TestCase
@@ -266,6 +268,7 @@ class ShipmentWorkflowTest extends TestCase
         $this->actingAs($provider, 'sanctum')->postJson("/api/v1/trips/{$tripId}/assign", [
             'truck_id' => $truck->id,
             'driver_id' => $driver->id,
+            'departure_time' => '15:00',
         ])->assertOk();
 
         $this->actingAs($driver, 'sanctum')->postJson("/api/v1/trips/{$tripId}/status", [
@@ -309,6 +312,7 @@ class ShipmentWorkflowTest extends TestCase
             ->postJson("/api/v1/trips/{$tripId}/assign", [
                 'truck_id' => $truck->id,
                 'driver_id' => $driver->id,
+                'departure_time' => '15:00',
             ])
             ->assertOk();
 
@@ -370,6 +374,7 @@ class ShipmentWorkflowTest extends TestCase
         $this->actingAs($provider, 'sanctum')->postJson("/api/v1/trips/{$tripId}/assign", [
             'truck_id' => $truck->id,
             'driver_id' => $driver->id,
+            'departure_time' => '15:00',
         ])->assertOk();
 
         foreach ([
@@ -439,6 +444,64 @@ class ShipmentWorkflowTest extends TestCase
     /**
      * @return array{0: User, 1: User, 2?: User, 3?: Truck}
      */
+    public function test_assignment_requires_a_future_departure_on_the_customer_required_date(): void
+    {
+        $this->travelTo(Carbon::parse('2026-06-15 08:00:00', 'UTC'));
+        [$customer, $provider, $driver, $truck] = $this->makeCustomerAndProvider(true);
+
+        $shipment = $this->actingAs($customer, 'sanctum')->postJson('/api/v1/shipments', [
+            'cargo_type' => 'Cement',
+            'weight_tons' => 12,
+            'quantity' => 12,
+            'pickup_address' => 'Muscat',
+            'pickup_city' => 'Muscat',
+            'delivery_address' => 'Nizwa',
+            'delivery_city' => 'Nizwa',
+            'required_date' => '2026-06-15',
+            'publish' => true,
+        ])->json('data');
+
+        $quotation = $this->actingAs($provider, 'sanctum')->postJson("/api/v1/shipments/{$shipment['id']}/quotations", [
+            'total_price' => 900,
+            'truck_count' => 1,
+            'truck_type' => TruckType::Flatbed->value,
+            'truck_capacity_tons' => 30,
+            'trip_count' => 1,
+            'quantity_per_trip' => 12,
+            'duration_days' => 1,
+        ])->json('data');
+
+        $job = $this->actingAs($customer, 'sanctum')
+            ->postJson("/api/v1/quotations/{$quotation['id']}/accept")
+            ->json('data');
+
+        $tripId = $job['trips'][0]['id'];
+
+        $this->actingAs($provider, 'sanctum')->postJson("/api/v1/trips/{$tripId}/assign", [
+            'truck_id' => $truck->id,
+            'driver_id' => $driver->id,
+        ])->assertStatus(422)->assertJsonValidationErrors(['departure_time']);
+
+        $this->actingAs($provider, 'sanctum')->postJson("/api/v1/trips/{$tripId}/assign", [
+            'truck_id' => $truck->id,
+            'driver_id' => $driver->id,
+            'departure_time' => '10:00',
+        ])->assertStatus(422)->assertJsonValidationErrors(['departure_time']);
+
+        $this->actingAs($provider, 'sanctum')->postJson("/api/v1/trips/{$tripId}/assign", [
+            'truck_id' => $truck->id,
+            'driver_id' => $driver->id,
+            'departure_time' => '15:30',
+        ])->assertOk()
+            ->assertJsonPath('data.status', 'assigned');
+
+        $stored = Trip::query()->findOrFail($tripId)->scheduled_departure_at;
+        $this->assertSame(
+            '2026-06-15 15:30',
+            $stored->timezone('Asia/Muscat')->format('Y-m-d H:i'),
+        );
+    }
+
     private function makeCustomerAndProvider(bool $withDriver = false): array
     {
         $customerOrg = Organization::query()->create([

@@ -253,6 +253,7 @@ class DemoDataSeeder extends Seeder
         $tripService->assign($provider, $trip, [
             'truck_id' => $truck->id,
             'driver_id' => $driver->id,
+            'departure_time' => '15:00',
         ]);
         $tripService->transition($driver, $trip->fresh(), TripStatus::ArrivedAtPickup);
         $tripService->transition($driver, $trip->fresh(), TripStatus::Loaded);

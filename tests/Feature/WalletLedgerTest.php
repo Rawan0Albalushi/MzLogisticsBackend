@@ -67,6 +67,7 @@ class WalletLedgerTest extends TestCase
         $this->actingAs($provider, 'sanctum')->postJson("/api/v1/trips/{$tripId}/assign", [
             'truck_id' => $truck->id,
             'driver_id' => $driver->id,
+            'departure_time' => '15:00',
         ])->assertOk();
 
         foreach ([
@@ -289,6 +290,7 @@ class WalletLedgerTest extends TestCase
         $this->actingAs($provider, 'sanctum')->postJson("/api/v1/trips/{$tripId}/assign", [
             'truck_id' => $truck->id,
             'driver_id' => $driver->id,
+            'departure_time' => '15:00',
         ])->assertOk();
 
         foreach ([

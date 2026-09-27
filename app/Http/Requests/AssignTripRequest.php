@@ -16,6 +16,7 @@ class AssignTripRequest extends FormRequest
         return [
             'truck_id' => ['required', 'integer', 'exists:trucks,id'],
             'driver_id' => ['required', 'integer', 'exists:users,id'],
+            'departure_time' => ['required', 'date_format:H:i'],
         ];
     }
 }
