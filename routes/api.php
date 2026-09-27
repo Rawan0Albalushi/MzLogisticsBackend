@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PaymentMethodController;
 use App\Http\Controllers\Api\PlacesController;
 use App\Http\Controllers\Api\PlatformOfferController;
+use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\PlatformSettingController;
 use App\Http\Controllers\Api\QuotationController;
 use App\Http\Controllers\Api\RoleController;
@@ -71,6 +72,13 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/shipments/{shipment}/platform-offers', [PlatformOfferController::class, 'store']);
         Route::post('/platform-offers/{platformOffer}/withdraw', [PlatformOfferController::class, 'withdraw']);
         Route::post('/platform-offers/{platformOffer}/accept', [PlatformOfferController::class, 'accept']);
+
+        Route::get('/projects', [ProjectController::class, 'index']);
+        Route::post('/projects', [ProjectController::class, 'store']);
+        Route::get('/projects/{project}', [ProjectController::class, 'show']);
+        Route::patch('/projects/{project}', [ProjectController::class, 'update']);
+        Route::post('/projects/{project}/jobs', [ProjectController::class, 'attachJob']);
+        Route::delete('/projects/{project}/jobs/{job}', [ProjectController::class, 'detachJob']);
 
         Route::get('/jobs', [JobController::class, 'index']);
         Route::get('/jobs/{job}', [JobController::class, 'show']);

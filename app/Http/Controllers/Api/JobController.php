@@ -19,10 +19,12 @@ class JobController extends Controller
         $user = $request->user();
 
         $jobs = TransportJob::query()
-            ->with(['customerOrganization', 'providerOrganization', 'shipmentRequest', 'quotation', 'trips'])
+            ->with(['project', 'customerOrganization', 'providerOrganization', 'shipmentRequest', 'quotation', 'trips'])
             ->when($user->user_type === UserType::Customer, fn ($q) => $q->where('customer_organization_id', $user->organization_id))
             ->when($user->user_type === UserType::Provider, fn ($q) => $q->where('provider_organization_id', $user->organization_id))
             ->when($user->user_type === UserType::Driver, fn ($q) => $q->whereHas('trips', fn ($trips) => $trips->where('driver_user_id', $user->id)))
+            ->when($request->filled('project'), fn ($q) => $q->where('project_id', $request->integer('project')))
+            ->when($request->boolean('without_project'), fn ($q) => $q->whereNull('project_id'))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($request->filled('search'), function ($q) use ($request) {
                 ListFilters::search(
@@ -49,6 +51,7 @@ class JobController extends Controller
 
         return ApiResponse::success(
             JobResource::make($job->load([
+                'project',
                 'customerOrganization',
                 'providerOrganization',
                 'shipmentRequest',

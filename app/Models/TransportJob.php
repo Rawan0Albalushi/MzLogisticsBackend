@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'reference',
+    'project_id',
     'shipment_request_id',
     'quotation_id',
     'customer_organization_id',
@@ -37,6 +38,11 @@ class TransportJob extends Model
             'started_at' => 'datetime',
             'completed_at' => 'datetime',
         ];
+    }
+
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class);
     }
 
     public function shipmentRequest(): BelongsTo

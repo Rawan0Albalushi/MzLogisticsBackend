@@ -30,6 +30,10 @@ class JobResource extends JsonResource
             'progress_percent' => $this->progressPercent(),
             'started_at' => $this->started_at,
             'completed_at' => $this->completed_at,
+            'project' => $this->when(
+                $this->relationLoaded('project'),
+                fn () => $this->project ? ProjectResource::make($this->project) : null,
+            ),
             'customer' => OrganizationResource::make($this->whenLoaded('customerOrganization')),
             'provider' => OrganizationResource::make($this->whenLoaded('providerOrganization')),
             'shipment' => ShipmentResource::make($this->whenLoaded('shipmentRequest')),
