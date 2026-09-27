@@ -94,16 +94,6 @@ class TruckImportService
             'plate_number / رقم اللوحة',
             'type / النوع',
             'capacity_tons / السعة',
-            'volume_cbm / الحجم',
-            'cargo_length_m / الطول',
-            'cargo_width_m / العرض',
-            'cargo_height_m / الارتفاع',
-            'axle_count / المحاور',
-            'year / السنة',
-            'make / الشركة',
-            'model / الطراز',
-            'status / الحالة',
-            'insurance_expires_at / انتهاء التأمين',
         ], 'trucks-import-template.xlsx');
     }
 

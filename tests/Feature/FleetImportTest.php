@@ -12,6 +12,7 @@ use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Tests\TestCase;
@@ -39,6 +40,26 @@ class FleetImportTest extends TestCase
             ->get('/api/v1/equipment/import-template')
             ->assertOk()
             ->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    }
+
+    public function test_truck_import_template_asks_only_for_essential_columns(): void
+    {
+        $provider = $this->makeProvider();
+
+        $response = $this->actingAs($provider, 'sanctum')
+            ->get('/api/v1/trucks/import-template')
+            ->assertOk();
+
+        $path = storage_path('framework/testing-truck-template.xlsx');
+        file_put_contents($path, $response->streamedContent());
+        $sheet = IOFactory::load($path)->getActiveSheet();
+
+        $this->assertSame([
+            'plate_number / رقم اللوحة',
+            'type / النوع',
+            'capacity_tons / السعة',
+        ], $sheet->rangeToArray('A1:C1')[0]);
+        $this->assertNull($sheet->getCell('D1')->getValue());
     }
 
     public function test_provider_can_import_trucks_with_partial_success(): void
