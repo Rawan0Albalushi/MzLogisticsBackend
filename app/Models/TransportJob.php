@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'customer_organization_id',
     'provider_organization_id',
     'total_price',
+    'provider_price',
     'total_quantity',
     'delivered_quantity',
     'currency',
@@ -30,6 +31,7 @@ class TransportJob extends Model
         return [
             'status' => JobStatus::class,
             'total_price' => 'decimal:3',
+            'provider_price' => 'decimal:3',
             'total_quantity' => 'decimal:2',
             'delivered_quantity' => 'decimal:2',
             'started_at' => 'datetime',

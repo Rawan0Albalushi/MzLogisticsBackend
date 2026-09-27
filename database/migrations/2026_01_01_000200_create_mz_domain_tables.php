@@ -215,7 +215,7 @@ return new class extends Migration
         Schema::create('proofs_of_delivery', function (Blueprint $table) {
             $table->id();
             $table->foreignId('trip_id')->unique()->constrained()->cascadeOnDelete();
-            $table->string('receiver_name');
+            $table->string('receiver_name')->nullable();
             $table->boolean('otp_verified')->default(false);
             $table->json('photo_paths')->nullable();
             $table->decimal('received_quantity', 10, 2);

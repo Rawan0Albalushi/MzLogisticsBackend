@@ -14,7 +14,7 @@ class StoreProofOfDeliveryRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'receiver_name' => ['required', 'string', 'max:120'],
+            'receiver_name' => ['nullable', 'string', 'max:120'],
             'otp' => ['required', 'string', 'size:6'],
             'received_quantity' => ['required', 'numeric', 'min:0.1'],
             'notes' => ['nullable', 'string', 'max:1000'],

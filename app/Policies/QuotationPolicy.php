@@ -24,6 +24,10 @@ class QuotationPolicy
         }
 
         if ($user->isCustomer()) {
+            if ($quotation->shipmentRequest?->usesAdminOfferSelection()) {
+                return false;
+            }
+
             return $quotation->shipmentRequest?->customer_organization_id === $user->organization_id;
         }
 
@@ -45,6 +49,7 @@ class QuotationPolicy
     public function accept(User $user, Quotation $quotation): bool
     {
         return $user->isCustomer()
+            && ! $quotation->shipmentRequest?->usesAdminOfferSelection()
             && $quotation->shipmentRequest?->customer_organization_id === $user->organization_id
             && $user->can(Permissions::QUOTATIONS_ACCEPT);
     }

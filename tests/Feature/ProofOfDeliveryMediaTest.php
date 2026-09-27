@@ -60,6 +60,23 @@ class ProofOfDeliveryMediaTest extends TestCase
         $this->assertNotEmpty($signature->streamedContent());
     }
 
+    public function test_driver_can_submit_pod_without_receiver_name(): void
+    {
+        [$customer, $provider, $driver, $truck] = $this->makeCustomerAndProvider();
+        $tripId = $this->createArrivedTrip($customer, $provider, $driver, $truck);
+        $otp = $this->actingAs($customer, 'sanctum')
+            ->getJson("/api/v1/trips/{$tripId}")
+            ->json('data.otp_code');
+
+        $this->actingAs($driver, 'sanctum')
+            ->post("/api/v1/trips/{$tripId}/pod", [
+                'otp' => $otp,
+                'received_quantity' => 12,
+            ], ['Accept' => 'application/json'])
+            ->assertCreated()
+            ->assertJsonPath('data.receiver_name', null);
+    }
+
     public function test_unrelated_customer_cannot_download_pod_media(): void
     {
         [$customer, $provider, $driver, $truck] = $this->makeCustomerAndProvider();

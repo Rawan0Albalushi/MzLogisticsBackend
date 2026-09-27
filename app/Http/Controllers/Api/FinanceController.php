@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\InvoiceType;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\InvoiceResource;
 use App\Http\Resources\JobResource;
@@ -30,7 +31,7 @@ class FinanceController extends Controller
         $user = $request->user();
 
         $items = Payment::query()
-            ->with(['quotation.providerOrganization', 'payerOrganization'])
+            ->with(['quotation.providerOrganization', 'quotation.shipmentRequest', 'payerOrganization'])
             ->when($user->isCustomer(), fn ($q) => $q->where('payer_organization_id', $user->organization_id))
             ->when($user->isProvider(), fn ($q) => $q->whereHas('quotation', fn ($quotation) => $quotation->where('provider_organization_id', $user->organization_id)))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
@@ -58,6 +59,12 @@ class FinanceController extends Controller
         $items = Invoice::query()
             ->with(['organization', 'transportJob', 'payment', 'trip'])
             ->when(! $user->isPlatform(), fn ($q) => $q->where('organization_id', $user->organization_id))
+            ->when($user->isProvider(), function ($query) {
+                $query->where(function ($inner) {
+                    $inner->where('type', '!=', InvoiceType::Commission->value)
+                        ->orWhereHas('transportJob', fn ($job) => $job->whereNull('provider_price'));
+                });
+            })
             ->when($request->filled('type'), fn ($q) => $q->where('type', $request->string('type')))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($request->filled('search'), function ($q) use ($request) {

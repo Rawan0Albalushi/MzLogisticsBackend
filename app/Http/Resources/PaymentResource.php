@@ -9,13 +9,18 @@ class PaymentResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $viewer = $request->user();
+        $this->loadMissing('quotation.shipmentRequest');
+        $adminPriced = (bool) $this->quotation?->shipmentRequest?->usesAdminOfferSelection();
+        $hideMarkup = $adminPriced && ($viewer?->isProvider() || $viewer?->isCustomer() || $viewer?->isDriver());
+
         return [
             'id' => $this->id,
             'reference' => $this->reference,
             'invoice_id' => $this->invoice_id,
-            'amount' => $this->amount,
-            'commission_amount' => $this->commission_amount,
-            'provider_amount' => $this->provider_amount,
+            'amount' => $hideMarkup && $viewer?->isProvider() ? $this->provider_amount : $this->amount,
+            'commission_amount' => $this->when(! $hideMarkup, $this->commission_amount),
+            'provider_amount' => $this->when(! $hideMarkup || (bool) $viewer?->isProvider(), $this->provider_amount),
             'currency' => $this->currency,
             'method' => $this->method,
             'status' => $this->status,

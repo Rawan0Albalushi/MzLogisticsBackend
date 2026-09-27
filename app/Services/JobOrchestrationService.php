@@ -8,12 +8,14 @@ use App\Enums\InvoiceStatus;
 use App\Enums\InvoiceType;
 use App\Enums\JobStatus;
 use App\Enums\PaymentStatus;
+use App\Enums\PlatformOfferStatus;
 use App\Enums\QuotationStatus;
 use App\Enums\ShipmentStatus;
 use App\Enums\TripStatus;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\PaymentMethod;
+use App\Models\PlatformOffer;
 use App\Models\Quotation;
 use App\Models\ShipmentRequest;
 use App\Models\TransportJob;
@@ -34,7 +36,14 @@ class JobOrchestrationService
         private readonly WalletLedgerService $walletLedger,
     ) {}
 
-    public function acceptQuotation(User $user, Quotation $quotation, ?string $method = null, ?string $callbackBaseUrl = null): QuotationAcceptanceResult
+    public function acceptPlatformOffer(User $user, PlatformOffer $offer, ?string $method = null, ?string $callbackBaseUrl = null): QuotationAcceptanceResult
+    {
+        $offer->load(['quotation.shipmentRequest', 'quotation.providerOrganization', 'shipmentRequest']);
+
+        return $this->acceptQuotation($user, $offer->quotation, $method, $callbackBaseUrl, $offer);
+    }
+
+    public function acceptQuotation(User $user, Quotation $quotation, ?string $method = null, ?string $callbackBaseUrl = null, ?PlatformOffer $platformOffer = null): QuotationAcceptanceResult
     {
         $quotation->load(['shipmentRequest', 'providerOrganization']);
 
@@ -43,25 +52,26 @@ class JobOrchestrationService
             return $existing;
         }
 
-        $this->assertQuotationCanBeAwarded($user, $quotation);
+        $this->assertQuotationCanBeAwarded($user, $quotation, $platformOffer);
         $shipment = $quotation->shipmentRequest;
         $terms = PaymentTerms::fromShipment($shipment);
 
         if ($terms->isDeferred()) {
-            return DB::transaction(function () use ($user, $quotation, $shipment) {
+            return DB::transaction(function () use ($user, $quotation, $shipment, $platformOffer) {
                 $quotation = Quotation::query()->whereKey($quotation->id)->lockForUpdate()->firstOrFail();
                 $shipment = ShipmentRequest::query()->whereKey($shipment->id)->lockForUpdate()->firstOrFail();
                 $quotation->setRelation('shipmentRequest', $shipment);
                 $quotation->loadMissing('providerOrganization');
+                $platformOffer = $this->lockPlatformOffer($platformOffer, $quotation);
 
                 $existing = $this->existingAcceptance($quotation);
                 if ($existing) {
                     return $existing;
                 }
 
-                $this->assertQuotationCanBeAwarded($user, $quotation);
+                $this->assertQuotationCanBeAwarded($user, $quotation, $platformOffer);
 
-                $job = $this->createAwardedJob($quotation, $shipment, $user, null, paid: false);
+                $job = $this->createAwardedJob($quotation, $shipment, $user, null, false, $platformOffer);
 
                 return new QuotationAcceptanceResult(
                     payment: null,
@@ -73,26 +83,29 @@ class JobOrchestrationService
         }
 
         $paymentMethod = $this->paymentMethods->resolveActive($method);
-        $idempotencyKey = ReferenceGenerator::idempotencyKey('quotation:'.$quotation->id);
+        $idempotencyKey = $platformOffer
+            ? ReferenceGenerator::idempotencyKey('platform-offer:'.$platformOffer->id)
+            : ReferenceGenerator::idempotencyKey('quotation:'.$quotation->id);
 
-        return DB::transaction(function () use ($user, $quotation, $shipment, $paymentMethod, $idempotencyKey, $callbackBaseUrl) {
+        return DB::transaction(function () use ($user, $quotation, $shipment, $paymentMethod, $idempotencyKey, $callbackBaseUrl, $platformOffer) {
             $quotation = Quotation::query()->whereKey($quotation->id)->lockForUpdate()->firstOrFail();
             $shipment = ShipmentRequest::query()->whereKey($shipment->id)->lockForUpdate()->firstOrFail();
             $quotation->setRelation('shipmentRequest', $shipment);
             $quotation->loadMissing('providerOrganization');
+            $platformOffer = $this->lockPlatformOffer($platformOffer, $quotation);
 
             $existing = $this->existingAcceptance($quotation);
             if ($existing) {
                 return $existing;
             }
 
-            $this->assertQuotationCanBeAwarded($user, $quotation);
+            $this->assertQuotationCanBeAwarded($user, $quotation, $platformOffer);
             $this->assertNoConflictingCheckout($shipment, $quotation);
 
-            $payment = $this->createOrResumePayment($quotation, $shipment, $user, $paymentMethod, $idempotencyKey);
+            $payment = $this->createOrResumePayment($quotation, $shipment, $user, $paymentMethod, $idempotencyKey, null, $platformOffer);
 
             if ($payment->status === PaymentStatus::Completed) {
-                $job = $this->fulfillPaidQuotation($payment, $user);
+                $job = $this->fulfillPaidQuotation($payment, $user, $platformOffer);
 
                 return new QuotationAcceptanceResult(
                     payment: $payment->fresh(),
@@ -134,7 +147,7 @@ class JobOrchestrationService
                 ]);
             }
 
-            $job = $this->fulfillPaidQuotation($payment->fresh(), $user);
+            $job = $this->fulfillPaidQuotation($payment->fresh(), $user, $platformOffer);
 
             return new QuotationAcceptanceResult(
                 payment: $payment->fresh(),
@@ -308,11 +321,12 @@ class JobOrchestrationService
         ]);
     }
 
-    private function fulfillPaidQuotation(Payment $payment, ?User $user): TransportJob
+    private function fulfillPaidQuotation(Payment $payment, ?User $user, ?PlatformOffer $offer = null): TransportJob
     {
         $payment->load(['quotation.shipmentRequest', 'quotation.providerOrganization']);
         $quotation = $payment->quotation;
         $shipment = $quotation->shipmentRequest;
+        $offer = $this->resolveOpenPlatformOffer($quotation, $offer);
 
         $existingJob = TransportJob::query()->where('quotation_id', $quotation->id)->first();
         if ($existingJob) {
@@ -321,7 +335,7 @@ class JobOrchestrationService
             return $existingJob->load(['trips', 'shipmentRequest', 'quotation', 'customerOrganization', 'providerOrganization', 'invoices']);
         }
 
-        $job = $this->createAwardedJob($quotation, $shipment, $user, $payment, paid: true);
+        $job = $this->createAwardedJob($quotation, $shipment, $user, $payment, paid: true, offer: $offer);
         $this->walletLedger->creditPendingEarning($payment, $job, $user);
 
         return $job;
@@ -333,7 +347,9 @@ class JobOrchestrationService
         ?User $user,
         ?Payment $payment,
         bool $paid,
+        ?PlatformOffer $offer = null,
     ): TransportJob {
+        $offer = $this->resolveOpenPlatformOffer($quotation, $offer);
         if (! in_array($quotation->status, [QuotationStatus::Submitted, QuotationStatus::Accepted], true)) {
             throw ValidationException::withMessages([
                 'quotation' => ['This quotation cannot be awarded.'],
@@ -346,7 +362,7 @@ class JobOrchestrationService
             ]);
         }
 
-        $amounts = $this->amountsFor($quotation, $payment);
+        $amounts = $this->amountsFor($quotation, $payment, $offer);
 
         $job = TransportJob::query()->create([
             'reference' => ReferenceGenerator::next('JOB', TransportJob::class),
@@ -354,7 +370,8 @@ class JobOrchestrationService
             'quotation_id' => $quotation->id,
             'customer_organization_id' => $shipment->customer_organization_id,
             'provider_organization_id' => $quotation->provider_organization_id,
-            'total_price' => $quotation->total_price,
+            'total_price' => $offer ? $amounts['amount'] : $quotation->total_price,
+            'provider_price' => $offer ? $amounts['provider_amount'] : null,
             'total_quantity' => $shipment->quantity,
             'delivered_quantity' => 0,
             'currency' => $quotation->currency,
@@ -388,6 +405,7 @@ class JobOrchestrationService
             $paid,
             PaymentTerms::fromShipment($shipment),
             $amounts,
+            $offer,
         );
 
         $quotation->forceFill(['status' => QuotationStatus::Accepted])->save();
@@ -400,6 +418,13 @@ class JobOrchestrationService
             'status' => ShipmentStatus::Awarded,
             'awarded_quotation_id' => $quotation->id,
         ])->save();
+
+        if ($offer && $offer->status !== PlatformOfferStatus::Accepted) {
+            $offer->forceFill([
+                'status' => PlatformOfferStatus::Accepted,
+                'accepted_at' => now(),
+            ])->save();
+        }
 
         AuditLogger::record('quotation.accepted', $quotation, [], ['job' => $job->reference], $user);
         AuditLogger::record('job.created', $job, [], $job->toArray(), $user);
@@ -461,16 +486,20 @@ class JobOrchestrationService
         bool $paid,
         PaymentTerms $terms,
         array $amounts,
+        ?PlatformOffer $offer = null,
     ): void {
         $invoiceStatus = $paid ? InvoiceStatus::Paid : InvoiceStatus::Issued;
         $dueAt = $paid ? now() : null;
 
         if ($terms->isPerTrip() && $job->trips->isNotEmpty()) {
-            $slices = BillingAllocator::split(
-                (float) $quotation->total_price,
-                $quotation->providerOrganization->commissionRate(),
-                $job->trips->map(fn (Trip $trip) => (float) $trip->planned_quantity)->all(),
-            );
+            $weights = $job->trips->map(fn (Trip $trip) => (float) $trip->planned_quantity)->all();
+            $slices = $offer
+                ? $this->markupSlices((float) $offer->customer_price, (float) $offer->provider_price, $weights)
+                : BillingAllocator::split(
+                    (float) $quotation->total_price,
+                    $quotation->providerOrganization->commissionRate(),
+                    $weights,
+                );
 
             foreach ($job->trips as $index => $trip) {
                 $slice = $slices[$index];
@@ -572,11 +601,12 @@ class JobOrchestrationService
         PaymentMethod $paymentMethod,
         string $idempotencyKey,
         ?Invoice $invoice = null,
+        ?PlatformOffer $platformOffer = null,
     ): Payment {
-        $commissionRate = $quotation->providerOrganization->commissionRate();
-        $amount = $invoice ? (float) $invoice->amount : (float) $quotation->total_price;
-        $commission = round($amount * $commissionRate, 3);
-        $providerAmount = round($amount - $commission, 3);
+        $split = $this->quoteAmounts($quotation, $platformOffer, $invoice);
+        $amount = $split['amount'];
+        $commission = $split['commission_amount'];
+        $providerAmount = $split['provider_amount'];
 
         $payment = Payment::query()->firstOrCreate(
             ['idempotency_key' => $idempotencyKey],
@@ -615,7 +645,7 @@ class JobOrchestrationService
     /**
      * @return array{amount: float, commission_amount: float, provider_amount: float}
      */
-    private function amountsFor(Quotation $quotation, ?Payment $payment): array
+    private function amountsFor(Quotation $quotation, ?Payment $payment, ?PlatformOffer $offer = null, ?Invoice $invoice = null): array
     {
         if ($payment) {
             return [
@@ -625,7 +655,30 @@ class JobOrchestrationService
             ];
         }
 
-        $amount = (float) $quotation->total_price;
+        return $this->quoteAmounts($quotation, $offer, $invoice);
+    }
+
+    /**
+     * @return array{amount: float, commission_amount: float, provider_amount: float}
+     */
+    private function quoteAmounts(Quotation $quotation, ?PlatformOffer $offer, ?Invoice $invoice): array
+    {
+        $quotation->loadMissing('shipmentRequest', 'providerOrganization');
+
+        if ($invoice && $quotation->shipmentRequest?->usesAdminOfferSelection()) {
+            return $this->amountsFromInvoices($invoice);
+        }
+
+        $offer = $this->resolveOpenPlatformOffer($quotation, $offer);
+        if ($offer) {
+            return [
+                'amount' => (float) $offer->customer_price,
+                'commission_amount' => (float) $offer->margin_amount,
+                'provider_amount' => (float) $offer->provider_price,
+            ];
+        }
+
+        $amount = $invoice ? (float) $invoice->amount : (float) $quotation->total_price;
         $commission = round($amount * $quotation->providerOrganization->commissionRate(), 3);
 
         return [
@@ -633,6 +686,111 @@ class JobOrchestrationService
             'commission_amount' => $commission,
             'provider_amount' => round($amount - $commission, 3),
         ];
+    }
+
+    /**
+     * @return array{amount: float, commission_amount: float, provider_amount: float}
+     */
+    private function amountsFromInvoices(Invoice $invoice): array
+    {
+        $scope = Invoice::query()
+            ->where('transport_job_id', $invoice->transport_job_id)
+            ->when(
+                $invoice->trip_id,
+                fn ($query) => $query->where('trip_id', $invoice->trip_id),
+                fn ($query) => $query->whereNull('trip_id'),
+            );
+
+        return [
+            'amount' => (float) $invoice->amount,
+            'commission_amount' => round((float) (clone $scope)->where('type', InvoiceType::Commission)->value('amount'), 3),
+            'provider_amount' => round((float) (clone $scope)->where('type', InvoiceType::Provider)->value('amount'), 3),
+        ];
+    }
+
+    /**
+     * @param  list<float>  $weights
+     * @return list<array{amount: float, commission_amount: float, provider_amount: float}>
+     */
+    private function markupSlices(float $customerAmount, float $providerAmount, array $weights): array
+    {
+        $customerSlices = BillingAllocator::split($customerAmount, 0, $weights);
+        $providerSlices = BillingAllocator::split($providerAmount, 0, $weights);
+        $slices = [];
+
+        foreach ($customerSlices as $index => $customerSlice) {
+            $providerSliceAmount = $providerSlices[$index]['amount'];
+            $slices[] = [
+                'amount' => $customerSlice['amount'],
+                'provider_amount' => $providerSliceAmount,
+                'commission_amount' => round($customerSlice['amount'] - $providerSliceAmount, 3),
+            ];
+        }
+
+        return $slices;
+    }
+
+    private function resolveOpenPlatformOffer(Quotation $quotation, ?PlatformOffer $offer): ?PlatformOffer
+    {
+        if ($offer) {
+            return $offer;
+        }
+
+        $quotation->loadMissing('shipmentRequest');
+        if (! $quotation->shipmentRequest?->usesAdminOfferSelection()) {
+            return null;
+        }
+
+        return PlatformOffer::query()
+            ->where('quotation_id', $quotation->id)
+            ->whereIn('status', [PlatformOfferStatus::Published, PlatformOfferStatus::Accepted])
+            ->latest('id')
+            ->first();
+    }
+
+    private function lockPlatformOffer(?PlatformOffer $offer, Quotation $quotation): ?PlatformOffer
+    {
+        if (! $offer) {
+            return null;
+        }
+
+        $locked = PlatformOffer::query()->whereKey($offer->id)->lockForUpdate()->firstOrFail();
+        $this->assertPlatformOfferStillValid($locked, $quotation);
+
+        return $locked;
+    }
+
+    private function assertPlatformOfferStillValid(PlatformOffer $offer, Quotation $quotation): void
+    {
+        if ($offer->status === PlatformOfferStatus::Accepted) {
+            return;
+        }
+
+        if ($offer->status !== PlatformOfferStatus::Published || (int) $offer->quotation_id !== (int) $quotation->id) {
+            throw ValidationException::withMessages([
+                'offer' => ['This platform offer is no longer available.'],
+            ]);
+        }
+
+        if ($quotation->status !== QuotationStatus::Submitted) {
+            throw ValidationException::withMessages([
+                'offer' => ['The provider quotation is no longer open.'],
+            ]);
+        }
+
+        if (round((float) $quotation->total_price, 3) !== round((float) $offer->provider_price, 3)) {
+            throw ValidationException::withMessages([
+                'offer' => ['The provider quotation changed. Publish a new platform offer.'],
+            ]);
+        }
+
+        if ($quotation->valid_until && $quotation->valid_until->isPast()) {
+            $offer->forceFill(['status' => PlatformOfferStatus::Expired])->save();
+
+            throw ValidationException::withMessages([
+                'offer' => ['This platform offer has expired.'],
+            ]);
+        }
     }
 
     private function captureWithMethod(Payment $payment, PaymentMethod $paymentMethod): void
@@ -684,7 +842,7 @@ class JobOrchestrationService
         }
     }
 
-    private function assertQuotationCanBeAwarded(User $user, Quotation $quotation): void
+    private function assertQuotationCanBeAwarded(User $user, Quotation $quotation, ?PlatformOffer $offer = null): void
     {
         if ($quotation->status !== QuotationStatus::Submitted) {
             throw ValidationException::withMessages([
@@ -703,6 +861,16 @@ class JobOrchestrationService
             throw ValidationException::withMessages([
                 'shipment' => ['You can only accept quotations on your own shipment requests.'],
             ]);
+        }
+
+        if ($shipment->usesAdminOfferSelection() && $offer === null) {
+            throw ValidationException::withMessages([
+                'quotation' => ['Accept the platform offer for this shipment.'],
+            ]);
+        }
+
+        if ($offer) {
+            $this->assertPlatformOfferStillValid($offer, $quotation);
         }
     }
 

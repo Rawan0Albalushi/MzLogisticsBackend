@@ -186,10 +186,12 @@ class TripService
 
             $signaturePath = $signature?->store("pods/{$trip->id}", 'local');
 
+            $receiverName = trim((string) ($payload['receiver_name'] ?? ''));
+
             $pod = ProofOfDelivery::query()->updateOrCreate(
                 ['trip_id' => $trip->id],
                 [
-                    'receiver_name' => $payload['receiver_name'],
+                    'receiver_name' => $receiverName !== '' ? $receiverName : null,
                     'otp_verified' => true,
                     'photo_paths' => $photoPaths,
                     'received_quantity' => $payload['received_quantity'],

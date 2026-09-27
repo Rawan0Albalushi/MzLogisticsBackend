@@ -30,12 +30,31 @@ class ShipmentResource extends JsonResource
             'required_date' => $this->required_date?->toDateString(),
             'notes' => $this->notes,
             'status' => $this->status,
+            'offer_selection_mode' => $this->offer_selection_mode ?? 'customer',
             'published_at' => $this->published_at,
             'customer' => OrganizationResource::make($this->whenLoaded('customerOrganization')),
-            'quotations' => QuotationResource::collection($this->whenLoaded('quotations')),
-            'quotations_count' => $this->whenCounted('quotations'),
+            'quotations' => $this->when(
+                $this->relationLoaded('quotations') && ! $this->hidesProviderQuotations($request),
+                fn () => QuotationResource::collection($this->quotations),
+            ),
+            'quotations_count' => $this->when(
+                isset($this->quotations_count) && ! $this->hidesProviderQuotations($request),
+                fn () => $this->quotations_count,
+            ),
+            'platform_offer' => $this->when(
+                $this->relationLoaded('activePlatformOffer')
+                    && $this->activePlatformOffer
+                    && ! $request->user()?->isProvider()
+                    && ! $request->user()?->isDriver(),
+                fn () => PlatformOfferResource::make($this->activePlatformOffer),
+            ),
             'payment_terms' => $this->paymentTerms()->toArray(),
             'created_at' => $this->created_at,
         ];
+    }
+
+    private function hidesProviderQuotations(Request $request): bool
+    {
+        return (bool) $request->user()?->isCustomer() && $this->usesAdminOfferSelection();
     }
 }

@@ -4,12 +4,14 @@ namespace App\Providers;
 
 use App\Contracts\DriverInviteSender;
 use App\Enums\UserType;
+use App\Models\PlatformOffer;
 use App\Models\Quotation;
 use App\Models\ShipmentRequest;
 use App\Models\TransportJob;
 use App\Models\Trip;
 use App\Models\User;
 use App\Notifications\WhatsAppDriverInviteSender;
+use App\Policies\PlatformOfferPolicy;
 use App\Policies\QuotationPolicy;
 use App\Policies\ShipmentRequestPolicy;
 use App\Policies\TransportJobPolicy;
@@ -36,6 +38,7 @@ class AppServiceProvider extends ServiceProvider
 
         Gate::policy(ShipmentRequest::class, ShipmentRequestPolicy::class);
         Gate::policy(Quotation::class, QuotationPolicy::class);
+        Gate::policy(PlatformOffer::class, PlatformOfferPolicy::class);
         Gate::policy(TransportJob::class, TransportJobPolicy::class);
         Gate::policy(Trip::class, TripPolicy::class);
 

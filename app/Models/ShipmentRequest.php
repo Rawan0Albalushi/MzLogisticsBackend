@@ -4,6 +4,8 @@ namespace App\Models;
 
 use App\Enums\BillingTrigger;
 use App\Enums\BillingUnit;
+use App\Enums\OfferSelectionMode;
+use App\Enums\PlatformOfferStatus;
 use App\Enums\ShipmentStatus;
 use App\Support\PaymentTerms;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -33,6 +35,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'required_date',
     'notes',
     'status',
+    'offer_selection_mode',
     'awarded_quotation_id',
     'payment_contract_id',
     'payment_billing_trigger',
@@ -46,6 +49,7 @@ class ShipmentRequest extends Model
     {
         return [
             'status' => ShipmentStatus::class,
+            'offer_selection_mode' => OfferSelectionMode::class,
             'payment_billing_trigger' => BillingTrigger::class,
             'payment_due_days' => 'integer',
             'payment_billing_unit' => BillingUnit::class,
@@ -74,6 +78,27 @@ class ShipmentRequest extends Model
     public function quotations(): HasMany
     {
         return $this->hasMany(Quotation::class);
+    }
+
+    public function platformOffers(): HasMany
+    {
+        return $this->hasMany(PlatformOffer::class);
+    }
+
+    public function activePlatformOffer(): HasOne
+    {
+        return $this->hasOne(PlatformOffer::class)->ofMany(
+            ['id' => 'max'],
+            fn ($query) => $query->whereIn('status', [
+                PlatformOfferStatus::Published->value,
+                PlatformOfferStatus::Accepted->value,
+            ]),
+        );
+    }
+
+    public function usesAdminOfferSelection(): bool
+    {
+        return $this->offer_selection_mode === OfferSelectionMode::Admin;
     }
 
     public function awardedQuotation(): BelongsTo

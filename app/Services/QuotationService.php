@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\OfferSelectionMode;
 use App\Enums\OrganizationStatus;
 use App\Enums\QuotationStatus;
 use App\Enums\ShipmentStatus;
@@ -10,12 +11,15 @@ use App\Models\Quotation;
 use App\Models\ShipmentRequest;
 use App\Models\User;
 use App\Support\AuditLogger;
+use App\Support\ListFilters;
 use App\Support\ReferenceGenerator;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Validation\ValidationException;
 
 class QuotationService
 {
+    public function __construct(private readonly PlatformOfferService $platformOffers) {}
+
     /**
      * @param  array<string, mixed>  $payload
      */
@@ -82,6 +86,7 @@ class QuotationService
         }
 
         $quotation->forceFill(['status' => QuotationStatus::Withdrawn])->save();
+        $this->platformOffers->withdrawForQuotation($quotation, $user);
         AuditLogger::record('quotation.withdrawn', $quotation, [], ['status' => $quotation->status->value], $user);
 
         return $quotation->fresh();
@@ -97,7 +102,11 @@ class QuotationService
             $query->where('provider_organization_id', $user->organization_id);
         } elseif ($user->user_type === UserType::Customer) {
             $query->whereHas('shipmentRequest', function ($builder) use ($user) {
-                $builder->where('customer_organization_id', $user->organization_id);
+                $builder->where('customer_organization_id', $user->organization_id)
+                    ->where(function ($mode) {
+                        $mode->whereNull('offer_selection_mode')
+                            ->orWhere('offer_selection_mode', OfferSelectionMode::Customer->value);
+                    });
             });
         } elseif ($user->user_type === UserType::Driver) {
             $query->whereRaw('1 = 0');
@@ -112,7 +121,7 @@ class QuotationService
         }
 
         if (! empty($filters['search'])) {
-            \App\Support\ListFilters::search(
+            ListFilters::search(
                 $query,
                 $filters['search'],
                 ['reference'],
@@ -123,7 +132,7 @@ class QuotationService
             );
         }
 
-        \App\Support\ListFilters::dateRange($query, $filters, 'created_at');
+        ListFilters::dateRange($query, $filters, 'created_at');
 
         return $query->paginate((int) ($filters['per_page'] ?? 15));
     }

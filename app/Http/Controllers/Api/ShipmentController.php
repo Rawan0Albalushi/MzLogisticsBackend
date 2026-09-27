@@ -36,7 +36,11 @@ class ShipmentController extends Controller
         $this->authorize('view', $shipment);
 
         return ApiResponse::success(
-            ShipmentResource::make($shipment->load(['customerOrganization', 'quotations.providerOrganization']))
+            ShipmentResource::make($shipment->load([
+                'customerOrganization',
+                'quotations.providerOrganization',
+                'activePlatformOffer.quotation.providerOrganization',
+            ]))
         );
     }
 

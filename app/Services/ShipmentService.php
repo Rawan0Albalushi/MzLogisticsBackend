@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\OfferSelectionMode;
 use App\Enums\QuantityUnit;
 use App\Enums\ShipmentStatus;
 use App\Enums\UserType;
@@ -15,7 +16,10 @@ use Illuminate\Validation\ValidationException;
 
 class ShipmentService
 {
-    public function __construct(private readonly PaymentContractService $paymentContracts) {}
+    public function __construct(
+        private readonly PaymentContractService $paymentContracts,
+        private readonly PlatformSettingService $settings,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $payload
@@ -30,6 +34,9 @@ class ShipmentService
             'customer_organization_id' => $user->organization_id,
             'created_by' => $user->id,
             'status' => $status,
+            'offer_selection_mode' => $status === ShipmentStatus::Published
+                ? $this->settings->offerSelectionMode()
+                : OfferSelectionMode::Customer,
             'published_at' => $status === ShipmentStatus::Published ? now() : null,
         ]);
 
@@ -70,6 +77,7 @@ class ShipmentService
 
         $shipment->forceFill([
             'status' => ShipmentStatus::Published,
+            'offer_selection_mode' => $this->settings->offerSelectionMode(),
             'published_at' => now(),
         ])->save();
 
@@ -97,7 +105,11 @@ class ShipmentService
     public function paginateFor(User $user, array $filters = []): LengthAwarePaginator
     {
         $query = ShipmentRequest::query()
-            ->with(['customerOrganization', 'quotations.providerOrganization'])
+            ->with([
+                'customerOrganization',
+                'quotations.providerOrganization',
+                'activePlatformOffer.quotation.providerOrganization',
+            ])
             ->latest();
 
         if ($user->user_type === UserType::Customer) {

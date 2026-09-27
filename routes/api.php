@@ -13,6 +13,8 @@ use App\Http\Controllers\Api\PaymentContractController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PaymentMethodController;
 use App\Http\Controllers\Api\PlacesController;
+use App\Http\Controllers\Api\PlatformOfferController;
+use App\Http\Controllers\Api\PlatformSettingController;
 use App\Http\Controllers\Api\QuotationController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\ShipmentController;
@@ -64,6 +66,11 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/quotations/{quotation}', [QuotationController::class, 'show']);
         Route::post('/quotations/{quotation}/withdraw', [QuotationController::class, 'withdraw']);
         Route::post('/quotations/{quotation}/accept', [QuotationController::class, 'accept']);
+        Route::get('/settings/offer-selection', [PlatformSettingController::class, 'showOfferSelection']);
+        Route::put('/settings/offer-selection', [PlatformSettingController::class, 'updateOfferSelection']);
+        Route::post('/shipments/{shipment}/platform-offers', [PlatformOfferController::class, 'store']);
+        Route::post('/platform-offers/{platformOffer}/withdraw', [PlatformOfferController::class, 'withdraw']);
+        Route::post('/platform-offers/{platformOffer}/accept', [PlatformOfferController::class, 'accept']);
 
         Route::get('/jobs', [JobController::class, 'index']);
         Route::get('/jobs/{job}', [JobController::class, 'show']);
