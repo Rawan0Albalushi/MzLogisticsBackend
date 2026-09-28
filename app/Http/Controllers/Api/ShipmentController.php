@@ -26,6 +26,8 @@ class ShipmentController extends Controller
 
     public function store(StoreShipmentRequest $request): JsonResponse
     {
+        $this->authorize('create', ShipmentRequest::class);
+
         $shipment = $this->shipments->create($request->user(), $request->validated());
 
         return ApiResponse::success(ShipmentResource::make($shipment->load('customerOrganization')), 'Shipment request created.', 201);
@@ -38,7 +40,7 @@ class ShipmentController extends Controller
         return ApiResponse::success(
             ShipmentResource::make($shipment->load([
                 'customerOrganization',
-                'quotations.providerOrganization',
+                'quotations' => fn ($query) => $query->fromServiceProviders()->with('providerOrganization'),
                 'activePlatformOffer.quotation.providerOrganization',
             ]))
         );

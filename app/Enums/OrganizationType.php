@@ -6,4 +6,5 @@ enum OrganizationType: string
 {
     case Customer = 'customer';
     case Provider = 'provider';
+    case Platform = 'platform';
 }

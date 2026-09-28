@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Enums\DriverStatus;
 use App\Enums\EquipmentStatus;
+use App\Enums\OrganizationType;
 use App\Enums\UserType;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreTruckRequest;
@@ -11,6 +12,7 @@ use App\Http\Resources\EquipmentResource;
 use App\Http\Resources\TruckResource;
 use App\Http\Resources\UserResource;
 use App\Models\Equipment;
+use App\Models\Organization;
 use App\Models\Truck;
 use App\Models\User;
 use App\Services\DriverImportService;
@@ -20,6 +22,7 @@ use App\Services\TruckImportService;
 use App\Support\ApiResponse;
 use App\Support\ListFilters;
 use App\Support\Permissions;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -35,6 +38,7 @@ class FleetController extends Controller
             ->when(! $request->user()->isPlatform(), fn ($q) => $q->where('organization_id', $request->user()->organization_id))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($request->filled('organization_id') && $request->user()->isPlatform(), fn ($q) => $q->where('organization_id', $request->integer('organization_id')))
+            ->tap(fn (Builder $query) => $this->constrainOwner($query, $request))
             ->when($request->filled('search'), function ($q) use ($request) {
                 ListFilters::search(
                     $q,
@@ -54,9 +58,7 @@ class FleetController extends Controller
 
     public function storeTruck(StoreTruckRequest $request): JsonResponse
     {
-        $organizationId = $request->user()->isPlatform()
-            ? $request->integer('organization_id')
-            : $request->user()->organization_id;
+        $organizationId = $request->user()->fleetOrganizationId();
 
         $truck = Truck::query()->create([
             ...$request->safe()->except('organization_id'),
@@ -99,8 +101,9 @@ class FleetController extends Controller
         $this->authorizePermission($request, Permissions::FLEET_VIEW);
         $placement = $request->string('placement')->toString();
         $items = Equipment::query()
-            ->with('truck:id,plate_number')
+            ->with(['truck:id,plate_number', 'organization:id,name,name_ar,type'])
             ->when(! $request->user()->isPlatform(), fn ($q) => $q->where('organization_id', $request->user()->organization_id))
+            ->tap(fn (Builder $query) => $this->constrainOwner($query, $request))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($placement === 'company', fn ($q) => $q->whereNull('truck_id'))
             ->when($placement === 'truck', fn ($q) => $q->whereNotNull('truck_id'))
@@ -118,7 +121,7 @@ class FleetController extends Controller
     {
         $this->authorizePermission($request, Permissions::FLEET_MANAGE);
         $data = $this->validatedEquipment($request);
-        $data['organization_id'] = $request->user()->organization_id;
+        $data['organization_id'] = $request->user()->fleetOrganizationId();
         $item = Equipment::query()->create($data);
 
         return ApiResponse::success(EquipmentResource::make($item->load('truck:id,plate_number')), 'Equipment added.', 201);
@@ -158,8 +161,9 @@ class FleetController extends Controller
         $this->authorizePermission($request, Permissions::DRIVERS_VIEW);
         $drivers = User::query()
             ->where('user_type', UserType::Driver)
-            ->with(['driverProfile', 'documents'])
+            ->with(['driverProfile', 'documents', 'organization:id,name,name_ar,type'])
             ->when(! $request->user()->isPlatform(), fn ($q) => $q->where('organization_id', $request->user()->organization_id))
+            ->tap(fn (Builder $query) => $this->constrainOwner($query, $request))
             ->when($request->filled('search'), function ($q) use ($request) {
                 ListFilters::search(
                     $q,
@@ -186,6 +190,7 @@ class FleetController extends Controller
             'phone' => ['required', 'string', 'max:32'],
             'license_number' => ['nullable', 'string', 'max:80'],
             'license_expires_at' => ['nullable', 'date'],
+            'trip_rate' => ['sometimes', 'nullable', 'numeric', 'min:0'],
         ]);
 
         $result = $provisioning->provision($request->user(), $data);
@@ -206,6 +211,7 @@ class FleetController extends Controller
             'phone' => ['required', 'string', 'max:32'],
             'license_number' => ['nullable', 'string', 'max:80'],
             'license_expires_at' => ['nullable', 'date'],
+            'trip_rate' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'status' => ['nullable', Rule::enum(DriverStatus::class)],
         ]);
 
@@ -250,7 +256,7 @@ class FleetController extends Controller
      */
     private function validatedEquipment(Request $request): array
     {
-        $organizationId = $request->user()->organization_id;
+        $organizationId = $request->user()->fleetOrganizationId();
         $data = $request->validate([
             'name' => ['required', 'string', 'max:120'],
             'type' => ['nullable', 'string', 'max:80'],
@@ -277,10 +283,20 @@ class FleetController extends Controller
 
     private function assertFleetOwnership(Request $request, int $organizationId): void
     {
-        if ($request->user()->isPlatform()) {
+        abort_unless($request->user()->fleetOrganizationId() === $organizationId, 403);
+    }
+
+    private function constrainOwner(Builder $query, Request $request): void
+    {
+        if (! $request->user()->isPlatform()) {
             return;
         }
 
-        abort_unless((int) $request->user()->organization_id === $organizationId, 403);
+        $owner = $request->string('owner')->toString();
+        if ($owner === 'platform') {
+            $query->where('organization_id', Organization::platform()->id);
+        } elseif ($owner === 'provider') {
+            $query->whereHas('organization', fn (Builder $organization) => $organization->where('type', OrganizationType::Provider));
+        }
     }
 }

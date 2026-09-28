@@ -36,9 +36,12 @@ class TripController extends Controller
             TripResource::make($trip->load([
                 'transportJob.shipmentRequest',
                 'transportJob.quotation',
+                'transportJob.providerOrganization',
+                'transportJob.trips',
                 'truck',
                 'driver',
                 'proofOfDelivery',
+                'driverPayable',
                 'locations',
             ]))
         );

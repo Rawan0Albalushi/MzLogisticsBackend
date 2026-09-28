@@ -32,10 +32,14 @@ class PlatformOfferResource extends JsonResource
         ];
 
         if ($request->user()?->isPlatform()) {
+            $this->resource->loadMissing('quotation.providerOrganization');
+            $ownedByPlatform = $this->quotation?->providerOrganization?->isPlatform() === true;
             $payload['quotation_id'] = $this->quotation_id;
             $payload['provider_price'] = $this->provider_price;
             $payload['margin_amount'] = $this->margin_amount;
-            if ($this->relationLoaded('quotation') && $this->quotation?->relationLoaded('providerOrganization')) {
+            $payload['owned_by_platform'] = $ownedByPlatform;
+            $payload['additional_costs'] = $this->quotation?->additional_costs;
+            if (! $ownedByPlatform && $this->quotation?->providerOrganization) {
                 $payload['provider'] = OrganizationResource::make($this->quotation->providerOrganization);
             }
         }

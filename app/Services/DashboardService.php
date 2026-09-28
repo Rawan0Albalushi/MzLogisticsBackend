@@ -91,6 +91,7 @@ class DashboardService
             'shipments_open' => (clone $shipments)->where('status', ShipmentStatus::Published)->count(),
             'shipments_total' => (clone $shipments)->count(),
             'quotations_pending' => Quotation::query()
+                ->fromServiceProviders()
                 ->when($user->isCustomer(), fn (Builder $q) => $q->whereHas('shipmentRequest', fn (Builder $s) => $s->where('customer_organization_id', $user->organization_id)))
                 ->when($user->isProvider(), fn (Builder $q) => $q->where('provider_organization_id', $user->organization_id))
                 ->where('status', QuotationStatus::Submitted)

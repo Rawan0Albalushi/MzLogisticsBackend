@@ -7,6 +7,8 @@ use App\Enums\JobStatus;
 use App\Enums\TripStatus;
 use App\Enums\TruckStatus;
 use App\Enums\UserType;
+use App\Models\DriverProfile;
+use App\Models\Organization;
 use App\Models\ProofOfDelivery;
 use App\Models\Trip;
 use App\Models\TripLocation;
@@ -29,10 +31,11 @@ class TripService
     public function __construct(
         private readonly WalletLedgerService $walletLedger,
         private readonly JobOrchestrationService $jobs,
+        private readonly DriverPayableService $driverPayables,
     ) {}
 
     /**
-     * @param  array{truck_id: int, driver_id: int, departure_time: string}  $payload
+     * @param  array{truck_id: int, driver_id: int, departure_time: string, driver_pay_amount?: float|int|string|null}  $payload
      */
     public function assign(User $user, Trip $trip, array $payload): Trip
     {
@@ -42,12 +45,18 @@ class TripService
             ]);
         }
 
+        $organizationId = $user->isPlatform()
+            ? Organization::platform()->id
+            : (int) $user->organization_id;
+
+        abort_unless((int) $trip->transportJob?->provider_organization_id === $organizationId, 403);
+
         $truck = Truck::query()
-            ->where('organization_id', $user->organization_id)
+            ->where('organization_id', $organizationId)
             ->findOrFail($payload['truck_id']);
 
         $driver = User::query()
-            ->where('organization_id', $user->organization_id)
+            ->where('organization_id', $organizationId)
             ->where('user_type', UserType::Driver)
             ->findOrFail($payload['driver_id']);
 
@@ -95,12 +104,14 @@ class TripService
         }
 
         $departure = $this->scheduledDeparture($trip, (string) ($payload['departure_time'] ?? ''));
+        $driverPay = $user->isPlatform() ? $this->resolveDriverPay($profile, $payload) : null;
 
-        return DB::transaction(function () use ($user, $trip, $truck, $driver, $profile, $departure) {
+        return DB::transaction(function () use ($user, $trip, $truck, $driver, $profile, $departure, $driverPay) {
             $trip->forceFill([
                 'truck_id' => $truck->id,
                 'driver_user_id' => $driver->id,
                 'assigned_by' => $user->id,
+                'driver_pay_amount' => $driverPay,
                 'status' => TripStatus::Assigned,
                 'assigned_at' => now(),
                 'scheduled_departure_at' => $departure,
@@ -125,6 +136,7 @@ class TripService
             AuditLogger::record('trip.assigned', $trip, [], [
                 'truck_id' => $truck->id,
                 'driver_id' => $driver->id,
+                'driver_pay_amount' => $driverPay,
                 'scheduled_departure_at' => $departure->toIso8601String(),
             ], $user);
 
@@ -277,6 +289,7 @@ class TripService
                 'truck',
                 'driver',
                 'proofOfDelivery',
+                'driverPayable',
             ])
             ->latest();
 
@@ -348,6 +361,27 @@ class TripService
         if ($trip->driver?->driverProfile && ! Trip::query()->where('driver_user_id', $trip->driver_user_id)->whereNotIn('status', [TripStatus::Completed, TripStatus::Cancelled])->exists()) {
             $trip->driver->driverProfile->forceFill(['status' => DriverStatus::Available])->save();
         }
+
+        $this->driverPayables->accrue($trip);
+    }
+
+    /**
+     * @param  array{driver_pay_amount?: float|int|string|null}  $payload
+     */
+    private function resolveDriverPay(DriverProfile $profile, array $payload): float
+    {
+        $raw = $payload['driver_pay_amount'] ?? null;
+        if ($raw === null || $raw === '') {
+            $raw = $profile->trip_rate;
+        }
+
+        if ($raw === null || $raw === '') {
+            throw ValidationException::withMessages([
+                'driver_pay_amount' => ['Enter the driver pay for this trip.'],
+            ]);
+        }
+
+        return round((float) $raw, 3);
     }
 
     private function scheduledDeparture(Trip $trip, string $time): CarbonInterface

@@ -95,6 +95,7 @@ class QuotationService
     public function paginateFor(User $user, array $filters = []): LengthAwarePaginator
     {
         $query = Quotation::query()
+            ->fromServiceProviders()
             ->with(['shipmentRequest.customerOrganization', 'providerOrganization'])
             ->latest();
 

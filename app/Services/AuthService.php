@@ -28,6 +28,16 @@ class AuthService
      */
     public function registerCustomer(array $payload): array
     {
+        return $this->issueToken($this->provisionCustomer($payload));
+    }
+
+    /**
+     * Create an active customer organization and its sign-in user.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function provisionCustomer(array $payload): User
+    {
         return DB::transaction(function () use ($payload) {
             $accountType = AccountType::from($payload['account_type'] ?? AccountType::Individual->value);
 
@@ -55,12 +65,10 @@ class AuthService
                 'password' => $payload['password'],
             ]);
 
-            $role = $accountType === AccountType::Company ? 'Company Admin' : 'Company Admin';
-            $user->assignRole($role);
-
+            $user->assignRole('Company Admin');
             $this->paymentContracts->ensureForCustomer($organization);
 
-            return $this->issueToken($user);
+            return $user->load('organization');
         });
     }
 

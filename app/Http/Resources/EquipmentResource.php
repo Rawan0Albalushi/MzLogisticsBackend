@@ -20,6 +20,7 @@ class EquipmentResource extends JsonResource
                 'id' => $this->truck->id,
                 'plate_number' => $this->truck->plate_number,
             ]),
+            'organization' => OrganizationResource::make($this->whenLoaded('organization')),
         ];
     }
 }

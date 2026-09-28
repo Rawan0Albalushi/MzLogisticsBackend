@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'organization_id',
     'license_number',
     'license_expires_at',
+    'trip_rate',
     'status',
 ])]
 class DriverProfile extends Model
@@ -20,6 +21,7 @@ class DriverProfile extends Model
     {
         return [
             'license_expires_at' => 'date',
+            'trip_rate' => 'decimal:3',
             'status' => DriverStatus::class,
         ];
     }

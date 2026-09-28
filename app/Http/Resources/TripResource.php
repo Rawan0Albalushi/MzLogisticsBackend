@@ -40,6 +40,16 @@ class TripResource extends JsonResource
             'arrived_at' => $this->arrived_at,
             'delivered_at' => $this->delivered_at,
             'completed_at' => $this->completed_at,
+            'driver_pay_amount' => $this->when((bool) $request->user()?->isPlatform(), $this->driver_pay_amount),
+            'driver_payable' => $this->when(
+                (bool) $request->user()?->isPlatform() && $this->relationLoaded('driverPayable'),
+                fn () => $this->driverPayable ? [
+                    'id' => $this->driverPayable->id,
+                    'status' => $this->driverPayable->status,
+                    'amount' => $this->driverPayable->amount,
+                    'paid_at' => $this->driverPayable->paid_at,
+                ] : null,
+            ),
             'job' => JobResource::make($this->whenLoaded('transportJob')),
             'truck' => TruckResource::make($this->whenLoaded('truck')),
             'driver' => UserResource::make($this->whenLoaded('driver')),

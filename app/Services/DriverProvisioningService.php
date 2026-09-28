@@ -18,7 +18,7 @@ class DriverProvisioningService
     public function __construct(private readonly DriverInviteSender $inviteSender) {}
 
     /**
-     * @param  array{name: string, phone: string, email?: string|null, license_number?: string|null, license_expires_at?: string|null}  $payload
+     * @param  array{name: string, phone: string, email?: string|null, license_number?: string|null, license_expires_at?: string|null, trip_rate?: float|int|string|null}  $payload
      * @return array{driver: User, invite_url: string, whatsapp_sent: bool}
      */
     public function provision(User $actor, array $payload): array
@@ -44,7 +44,10 @@ class DriverProvisioningService
             ]);
         }
 
-        return DB::transaction(function () use ($actor, $payload, $phone, $email) {
+        $organizationId = $this->managedOrganizationId($actor);
+        $tripRate = $actor->isPlatform() ? $this->tripRate($payload) : null;
+
+        return DB::transaction(function () use ($payload, $phone, $email, $organizationId, $tripRate) {
             $driver = User::query()->create([
                 'name' => $payload['name'],
                 'email' => $email,
@@ -52,7 +55,7 @@ class DriverProvisioningService
                 'password' => Str::password(32),
                 'locale' => 'ar',
                 'user_type' => UserType::Driver,
-                'organization_id' => $actor->organization_id,
+                'organization_id' => $organizationId,
                 'is_active' => true,
                 'must_set_password' => true,
             ]);
@@ -62,6 +65,7 @@ class DriverProvisioningService
                 'organization_id' => $driver->organization_id,
                 'license_number' => $payload['license_number'] ?? null,
                 'license_expires_at' => $payload['license_expires_at'] ?? null,
+                'trip_rate' => $tripRate,
                 'status' => DriverStatus::Available,
             ]);
 
@@ -77,7 +81,7 @@ class DriverProvisioningService
     }
 
     /**
-     * @param  array{name: string, phone: string, email?: string|null, license_number?: string|null, license_expires_at?: string|null, status?: string|null}  $payload
+     * @param  array{name: string, phone: string, email?: string|null, license_number?: string|null, license_expires_at?: string|null, trip_rate?: float|int|string|null, status?: string|null}  $payload
      */
     public function update(User $actor, User $driver, array $payload): User
     {
@@ -108,7 +112,7 @@ class DriverProvisioningService
             ]);
         }
 
-        return DB::transaction(function () use ($driver, $payload, $phone, $email) {
+        return DB::transaction(function () use ($actor, $driver, $payload, $phone, $email) {
             $driver->fill([
                 'name' => $payload['name'],
                 'email' => $email,
@@ -120,11 +124,15 @@ class DriverProvisioningService
                 'organization_id' => $driver->organization_id,
                 'status' => DriverStatus::Available,
             ]);
-            $profile->fill([
+            $profileData = [
                 'license_number' => filled($payload['license_number'] ?? null) ? $payload['license_number'] : null,
                 'license_expires_at' => filled($payload['license_expires_at'] ?? null) ? $payload['license_expires_at'] : null,
                 'status' => $payload['status'] ?? $profile->status ?? DriverStatus::Available,
-            ])->save();
+            ];
+            if ($actor->isPlatform() && array_key_exists('trip_rate', $payload)) {
+                $profileData['trip_rate'] = $this->tripRate($payload);
+            }
+            $profile->fill($profileData)->save();
 
             return $driver->refresh()->load('driverProfile');
         });
@@ -196,6 +204,18 @@ class DriverProvisioningService
         return PhoneNumber::digits($normalizedPhone).'@'.$domain;
     }
 
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function tripRate(array $payload): ?float
+    {
+        if (! array_key_exists('trip_rate', $payload) || $payload['trip_rate'] === null || $payload['trip_rate'] === '') {
+            return null;
+        }
+
+        return round((float) $payload['trip_rate'], 3);
+    }
+
     private function assertPhoneAvailable(string $phone, ?int $ignoreUserId = null): void
     {
         $exists = User::query()
@@ -213,17 +233,24 @@ class DriverProvisioningService
 
     private function assertCanManage(User $actor): void
     {
+        $this->managedOrganizationId($actor);
+    }
+
+    private function managedOrganizationId(User $actor): int
+    {
+        if ($actor->isPlatform()) {
+            return $actor->fleetOrganizationId();
+        }
+
         if (! $actor->organization_id) {
             abort(403, 'Drivers can only be created by a service provider.');
         }
+
+        return (int) $actor->organization_id;
     }
 
     private function assertSameOrganization(User $actor, User $driver): void
     {
-        if ($actor->isPlatform()) {
-            return;
-        }
-
-        abort_unless((int) $actor->organization_id === (int) $driver->organization_id, 403);
+        abort_unless((int) $this->managedOrganizationId($actor) === (int) $driver->organization_id, 403);
     }
 }

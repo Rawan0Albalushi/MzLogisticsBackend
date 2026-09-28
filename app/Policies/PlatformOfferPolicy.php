@@ -24,4 +24,9 @@ class PlatformOfferPolicy
             && $offer->shipmentRequest?->customer_organization_id === $user->organization_id
             && $user->can(Permissions::QUOTATIONS_ACCEPT);
     }
+
+    public function confirm(User $user, PlatformOffer $offer): bool
+    {
+        return $user->isPlatform() && $user->can(Permissions::QUOTATIONS_MANAGE);
+    }
 }

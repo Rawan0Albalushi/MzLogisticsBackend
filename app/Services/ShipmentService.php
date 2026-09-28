@@ -3,9 +3,11 @@
 namespace App\Services;
 
 use App\Enums\OfferSelectionMode;
+use App\Enums\OrganizationStatus;
 use App\Enums\QuantityUnit;
 use App\Enums\ShipmentStatus;
 use App\Enums\UserType;
+use App\Models\Organization;
 use App\Models\ShipmentRequest;
 use App\Models\User;
 use App\Support\AuditLogger;
@@ -31,7 +33,7 @@ class ShipmentService
         $shipment = ShipmentRequest::query()->create([
             ...$this->attributes($payload),
             'reference' => ReferenceGenerator::next('SHP', ShipmentRequest::class),
-            'customer_organization_id' => $user->organization_id,
+            'customer_organization_id' => $this->customerOrganizationId($user, $payload),
             'created_by' => $user->id,
             'status' => $status,
             'offer_selection_mode' => $status === ShipmentStatus::Published
@@ -107,7 +109,7 @@ class ShipmentService
         $query = ShipmentRequest::query()
             ->with([
                 'customerOrganization',
-                'quotations.providerOrganization',
+                'quotations' => fn ($query) => $query->fromServiceProviders()->with('providerOrganization'),
                 'activePlatformOffer.quotation.providerOrganization',
             ])
             ->latest();
@@ -140,6 +142,36 @@ class ShipmentService
         ListFilters::dateRange($query, $filters, 'required_date');
 
         return $query->paginate((int) ($filters['per_page'] ?? 15));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function customerOrganizationId(User $user, array $payload): int
+    {
+        if ($user->isPlatform()) {
+            $organization = Organization::query()->find($payload['customer_organization_id'] ?? null);
+
+            if (
+                ! $organization
+                || ! $organization->isCustomer()
+                || $organization->status !== OrganizationStatus::Active
+            ) {
+                throw ValidationException::withMessages([
+                    'customer_organization_id' => ['Choose an active customer.'],
+                ]);
+            }
+
+            return $organization->id;
+        }
+
+        if (! $user->isCustomer() || ! $user->organization_id) {
+            throw ValidationException::withMessages([
+                'customer_organization_id' => ['Only a customer account can create a shipment request.'],
+            ]);
+        }
+
+        return (int) $user->organization_id;
     }
 
     /**

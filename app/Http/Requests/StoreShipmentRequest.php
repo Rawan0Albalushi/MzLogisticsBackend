@@ -4,7 +4,10 @@ namespace App\Http\Requests;
 
 use App\Enums\BillingTrigger;
 use App\Enums\BillingUnit;
+use App\Enums\OrganizationStatus;
+use App\Enums\OrganizationType;
 use App\Enums\QuantityUnit;
+use App\Models\ShipmentRequest;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -12,7 +15,17 @@ class StoreShipmentRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user() !== null;
+        $user = $this->user();
+        if ($user === null) {
+            return false;
+        }
+
+        $shipment = $this->route('shipment');
+        if ($shipment instanceof ShipmentRequest) {
+            return $user->can('update', $shipment);
+        }
+
+        return $user->can('create', ShipmentRequest::class);
     }
 
     protected function prepareForValidation(): void
@@ -54,6 +67,19 @@ class StoreShipmentRequest extends FormRequest
             'delivery_lng' => ['nullable', 'numeric', 'between:-180,180', 'required_with:delivery_lat'],
             'required_date' => ['required', 'date', 'after_or_equal:today'],
             'notes' => ['nullable', 'string', 'max:2000'],
+            'customer_organization_id' => $this->route('shipment')
+                ? ['prohibited']
+                : [
+                    Rule::requiredIf(fn () => (bool) $this->user()?->isPlatform()),
+                    Rule::prohibitedIf(fn () => $this->user() !== null && ! $this->user()->isPlatform()),
+                    'nullable',
+                    'integer',
+                    Rule::exists('organizations', 'id')->where(
+                        fn ($query) => $query
+                            ->where('type', OrganizationType::Customer->value)
+                            ->where('status', OrganizationStatus::Active->value)
+                    ),
+                ],
             'publish' => ['sometimes', 'boolean'],
             'billing_trigger' => ['sometimes', Rule::enum(BillingTrigger::class)],
             'billing_unit' => ['nullable', Rule::enum(BillingUnit::class)],

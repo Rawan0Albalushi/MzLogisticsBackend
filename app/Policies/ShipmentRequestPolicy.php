@@ -34,6 +34,10 @@ class ShipmentRequestPolicy
 
     public function create(User $user): bool
     {
+        if ($user->isPlatform()) {
+            return $user->can(Permissions::SHIPMENTS_MANAGE) || $user->can(Permissions::SHIPMENTS_CREATE);
+        }
+
         return $user->isCustomer() && $user->can(Permissions::SHIPMENTS_CREATE);
     }
 

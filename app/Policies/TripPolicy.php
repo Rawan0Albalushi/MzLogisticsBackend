@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Models\Organization;
 use App\Models\Trip;
 use App\Models\User;
 use App\Support\Permissions;
@@ -37,8 +38,15 @@ class TripPolicy
 
     public function assign(User $user, Trip $trip): bool
     {
+        $providerOrganizationId = $trip->transportJob?->provider_organization_id;
+
+        if ($user->isPlatform()) {
+            return $user->can(Permissions::TRIPS_ASSIGN)
+                && (int) $providerOrganizationId === Organization::platform()->id;
+        }
+
         return $user->isProvider()
-            && $trip->transportJob?->provider_organization_id === $user->organization_id
+            && $providerOrganizationId === $user->organization_id
             && $user->can(Permissions::TRIPS_ASSIGN);
     }
 

@@ -24,6 +24,7 @@ class RolePermissionSeeder extends Seeder
             'Operations Manager' => [
                 Permissions::DASHBOARD_VIEW,
                 Permissions::CUSTOMERS_VIEW,
+                Permissions::CUSTOMERS_MANAGE,
                 Permissions::PROVIDERS_VIEW,
                 Permissions::PROVIDERS_VERIFY,
                 Permissions::FLEET_VIEW,

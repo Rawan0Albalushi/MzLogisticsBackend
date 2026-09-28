@@ -99,4 +99,17 @@ class User extends Authenticatable
     {
         return $this->user_type === UserType::Driver;
     }
+
+    public function fleetOrganizationId(): int
+    {
+        if ($this->isPlatform()) {
+            return Organization::platform()->id;
+        }
+
+        if (! $this->organization_id) {
+            abort(403, 'This action requires a company account.');
+        }
+
+        return (int) $this->organization_id;
+    }
 }

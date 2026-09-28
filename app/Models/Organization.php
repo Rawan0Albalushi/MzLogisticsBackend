@@ -115,6 +115,16 @@ class Organization extends Model
         return $this->type === OrganizationType::Customer;
     }
 
+    public function isPlatform(): bool
+    {
+        return $this->type === OrganizationType::Platform;
+    }
+
+    public static function platform(): self
+    {
+        return once(fn () => static::query()->where('type', OrganizationType::Platform)->firstOrFail());
+    }
+
     public function commissionRate(): float
     {
         return (float) ($this->commission_rate ?? config('mz.commission_rate'));

@@ -59,6 +59,7 @@ class JobController extends Controller
                 'trips.truck',
                 'trips.driver',
                 'trips.proofOfDelivery',
+                'trips.driverPayable',
                 'invoices.trip',
             ]))
         );

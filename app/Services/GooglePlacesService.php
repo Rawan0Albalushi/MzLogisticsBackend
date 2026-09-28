@@ -302,7 +302,6 @@ class GooglePlacesService
     }
 
     /**
-     * @param  mixed  $components
      * @return array{governorate: string, wilayat: string, city: string}
      */
     private function divisionsFromComponents(mixed $components): array
@@ -315,7 +314,7 @@ class GooglePlacesService
             'sublocality',
             'sublocality_level_1',
             'administrative_area_level_3',
-        ]);
+        ]));
 
         if ($wilayat !== '' && $this->samePlaceName($wilayat, $governorate)) {
             $wilayat = $this->componentName($components, [
@@ -338,7 +337,6 @@ class GooglePlacesService
     }
 
     /**
-     * @param  mixed  $components
      * @param  list<string>  $types
      */
     private function componentName(mixed $components, array $types): string
@@ -405,9 +403,6 @@ class GooglePlacesService
         return mb_substr(implode(', ', $parts), 0, 120);
     }
 
-    /**
-     * @param  mixed  $components
-     */
     private function cityFromComponents(mixed $components): string
     {
         if (! is_array($components)) {

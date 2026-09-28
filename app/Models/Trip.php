@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'truck_id',
     'driver_user_id',
     'assigned_by',
+    'driver_pay_amount',
     'planned_quantity',
     'delivered_quantity',
     'status',
@@ -47,6 +48,7 @@ class Trip extends Model
     {
         return [
             'status' => TripStatus::class,
+            'driver_pay_amount' => 'decimal:3',
             'planned_quantity' => 'decimal:2',
             'delivered_quantity' => 'decimal:2',
             'pickup_lat' => 'decimal:7',
@@ -95,6 +97,11 @@ class Trip extends Model
     public function proofOfDelivery(): HasOne
     {
         return $this->hasOne(ProofOfDelivery::class);
+    }
+
+    public function driverPayable(): HasOne
+    {
+        return $this->hasOne(DriverPayable::class);
     }
 
     public function hasActiveDeliveryOtp(): bool

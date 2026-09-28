@@ -76,12 +76,13 @@ class EquipmentImportService
      */
     public function import(User $actor, UploadedFile $file): array
     {
-        $organizationId = $actor->organization_id;
-        if (! $organizationId) {
+        if (! $actor->isPlatform() && ! $actor->organization_id) {
             throw ValidationException::withMessages([
                 'file' => ['Your account is not linked to a company.'],
             ]);
         }
+
+        $organizationId = $actor->fleetOrganizationId();
 
         $rows = $this->spreadsheet()->rows($file);
         $maxRows = (int) config('mz.fleet_import_max_rows', 200);

@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Enums\AccountType;
 use App\Enums\OrganizationStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\StoreCustomerRequest;
 use App\Http\Resources\OrganizationResource;
 use App\Models\Organization;
+use App\Services\AuthService;
 use App\Services\PaymentContractService;
 use App\Support\ApiResponse;
 use App\Support\AuditLogger;
@@ -19,7 +21,10 @@ use Illuminate\Validation\ValidationException;
 
 class OrganizationController extends Controller
 {
-    public function __construct(private readonly PaymentContractService $paymentContracts) {}
+    public function __construct(
+        private readonly PaymentContractService $paymentContracts,
+        private readonly AuthService $auth,
+    ) {}
 
     public function customers(Request $request): JsonResponse
     {
@@ -47,6 +52,19 @@ class OrganizationController extends Controller
             ->paginate((int) $request->integer('per_page', 15));
 
         return ApiResponse::success(OrganizationResource::collection($items));
+    }
+
+    public function storeCustomer(StoreCustomerRequest $request): JsonResponse
+    {
+        $user = $this->auth->provisionCustomer($request->validated());
+        $organization = $user->organization;
+
+        AuditLogger::record('customer.created', $organization, [], [
+            'email' => $user->email,
+            'account_type' => $organization->account_type?->value,
+        ], $request->user());
+
+        return ApiResponse::success(OrganizationResource::make($organization), 'Customer created.', 201);
     }
 
     public function providers(Request $request): JsonResponse

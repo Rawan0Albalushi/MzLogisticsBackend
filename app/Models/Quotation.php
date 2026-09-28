@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use App\Enums\OrganizationType;
 use App\Enums\QuotationStatus;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -48,6 +50,14 @@ class Quotation extends Model
     public function providerOrganization(): BelongsTo
     {
         return $this->belongsTo(Organization::class, 'provider_organization_id');
+    }
+
+    public function scopeFromServiceProviders(Builder $query): Builder
+    {
+        return $query->whereHas(
+            'providerOrganization',
+            fn (Builder $organization) => $organization->where('type', OrganizationType::Provider),
+        );
     }
 
     public function creator(): BelongsTo

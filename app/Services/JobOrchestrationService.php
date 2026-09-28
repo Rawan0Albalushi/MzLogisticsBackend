@@ -43,6 +43,59 @@ class JobOrchestrationService
         return $this->acceptQuotation($user, $offer->quotation, $method, $callbackBaseUrl, $offer);
     }
 
+    public function confirmPlatformOffer(User $user, PlatformOffer $offer): QuotationAcceptanceResult
+    {
+        $offer->load(['quotation.shipmentRequest', 'quotation.providerOrganization']);
+
+        return DB::transaction(function () use ($user, $offer) {
+            $quotation = Quotation::query()->whereKey($offer->quotation_id)->lockForUpdate()->firstOrFail();
+            $shipment = ShipmentRequest::query()->whereKey($quotation->shipment_request_id)->lockForUpdate()->firstOrFail();
+            $quotation->setRelation('shipmentRequest', $shipment);
+            $quotation->load('providerOrganization');
+            $offer = $this->lockPlatformOffer($offer, $quotation);
+
+            $existing = $this->existingAcceptance($quotation);
+            if ($existing) {
+                return $existing;
+            }
+
+            if ($quotation->status !== QuotationStatus::Submitted) {
+                throw ValidationException::withMessages([
+                    'quotation' => ['This quotation cannot be accepted.'],
+                ]);
+            }
+
+            if ($shipment->status !== ShipmentStatus::Published) {
+                throw ValidationException::withMessages([
+                    'shipment' => ['This shipment is no longer open for award.'],
+                ]);
+            }
+
+            $job = $this->createAwardedJob($quotation, $shipment, $user, null, false, $offer);
+            $terms = PaymentTerms::fromShipment($shipment);
+
+            if ($terms->isPrepaid()) {
+                Invoice::query()
+                    ->where('transport_job_id', $job->id)
+                    ->where('type', InvoiceType::Customer)
+                    ->whereNull('due_at')
+                    ->update(['due_at' => now()]);
+            }
+
+            AuditLogger::record('platform_offer.confirmed_on_behalf', $offer, [], [
+                'customer_organization_id' => $shipment->customer_organization_id,
+                'job' => $job->reference,
+            ], $user);
+
+            return new QuotationAcceptanceResult(
+                payment: null,
+                requiresCheckout: false,
+                job: $job,
+                paymentDeferred: ! $terms->isPrepaid(),
+            );
+        });
+    }
+
     public function acceptQuotation(User $user, Quotation $quotation, ?string $method = null, ?string $callbackBaseUrl = null, ?PlatformOffer $platformOffer = null): QuotationAcceptanceResult
     {
         $quotation->load(['shipmentRequest', 'providerOrganization']);
@@ -548,18 +601,21 @@ class JobOrchestrationService
             'due_at' => $dueAt,
         ]);
 
-        Invoice::query()->create([
-            'reference' => ReferenceGenerator::next('INV', Invoice::class),
-            'organization_id' => $quotation->provider_organization_id,
-            'transport_job_id' => $job->id,
-            'trip_id' => $tripId,
-            'payment_id' => $payment?->id,
-            'type' => InvoiceType::Provider,
-            'amount' => $amounts['provider_amount'],
-            'currency' => $quotation->currency,
-            'status' => InvoiceStatus::Issued,
-            'issued_at' => now(),
-        ]);
+        $quotation->loadMissing('providerOrganization');
+        if (! $quotation->providerOrganization?->isPlatform()) {
+            Invoice::query()->create([
+                'reference' => ReferenceGenerator::next('INV', Invoice::class),
+                'organization_id' => $quotation->provider_organization_id,
+                'transport_job_id' => $job->id,
+                'trip_id' => $tripId,
+                'payment_id' => $payment?->id,
+                'type' => InvoiceType::Provider,
+                'amount' => $amounts['provider_amount'],
+                'currency' => $quotation->currency,
+                'status' => InvoiceStatus::Issued,
+                'issued_at' => now(),
+            ]);
+        }
 
         Invoice::query()->create([
             'reference' => ReferenceGenerator::next('INV', Invoice::class),
@@ -778,7 +834,12 @@ class JobOrchestrationService
             ]);
         }
 
-        if (round((float) $quotation->total_price, 3) !== round((float) $offer->provider_price, 3)) {
+        $quotation->loadMissing('providerOrganization');
+        $expectedPrice = $quotation->providerOrganization?->isPlatform()
+            ? (float) $offer->customer_price
+            : (float) $offer->provider_price;
+
+        if (round((float) $quotation->total_price, 3) !== round($expectedPrice, 3)) {
             throw ValidationException::withMessages([
                 'offer' => ['The provider quotation changed. Publish a new platform offer.'],
             ]);

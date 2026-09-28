@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CatalogController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DocumentController;
+use App\Http\Controllers\Api\DriverPayableController;
 use App\Http\Controllers\Api\FinanceController;
 use App\Http\Controllers\Api\FleetController;
 use App\Http\Controllers\Api\JobController;
@@ -14,8 +15,8 @@ use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PaymentMethodController;
 use App\Http\Controllers\Api\PlacesController;
 use App\Http\Controllers\Api\PlatformOfferController;
-use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\PlatformSettingController;
+use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\QuotationController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\ShipmentController;
@@ -71,6 +72,7 @@ Route::prefix('v1')->group(function (): void {
         Route::put('/settings/offer-selection', [PlatformSettingController::class, 'updateOfferSelection']);
         Route::post('/shipments/{shipment}/platform-offers', [PlatformOfferController::class, 'store']);
         Route::post('/platform-offers/{platformOffer}/withdraw', [PlatformOfferController::class, 'withdraw']);
+        Route::post('/platform-offers/{platformOffer}/confirm', [PlatformOfferController::class, 'confirm']);
         Route::post('/platform-offers/{platformOffer}/accept', [PlatformOfferController::class, 'accept']);
 
         Route::get('/projects', [ProjectController::class, 'index']);
@@ -117,6 +119,7 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/drivers/{driver}/documents', [DocumentController::class, 'storeForDriver']);
 
         Route::get('/customers', [OrganizationController::class, 'customers']);
+        Route::post('/customers', [OrganizationController::class, 'storeCustomer']);
         Route::get('/providers', [OrganizationController::class, 'providers']);
         Route::get('/documents/{document}/file', [DocumentController::class, 'download']);
         Route::get('/organizations/{organization}', [OrganizationController::class, 'show']);
@@ -143,6 +146,8 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/settlements', [FinanceController::class, 'storeSettlement']);
         Route::post('/settlements/request', [FinanceController::class, 'requestSettlement']);
         Route::post('/settlements/{settlement}/complete', [FinanceController::class, 'completeSettlement']);
+        Route::get('/driver-payables', [DriverPayableController::class, 'index']);
+        Route::post('/driver-payables/{driverPayable}/pay', [DriverPayableController::class, 'pay']);
         Route::get('/wallets', [WalletController::class, 'index']);
         Route::get('/wallets/{wallet}', [WalletController::class, 'show']);
         Route::get('/wallets/{wallet}/transactions', [WalletController::class, 'transactions']);
