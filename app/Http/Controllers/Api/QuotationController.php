@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\StoreQuotationOnBehalfRequest;
 use App\Http\Requests\StoreQuotationRequest;
 use App\Http\Resources\JobResource;
 use App\Http\Resources\PaymentResource;
@@ -37,6 +38,18 @@ class QuotationController extends Controller
         $quotation = $this->quotations->submit($request->user(), $shipment, $request->validated());
 
         return ApiResponse::success(QuotationResource::make($quotation), 'Quotation submitted.', 201);
+    }
+
+    public function storeOnBehalf(StoreQuotationOnBehalfRequest $request, ShipmentRequest $shipment): JsonResponse
+    {
+        $this->authorize('view', $shipment);
+        $quotation = $this->quotations->submitOnBehalf($request->user(), $shipment, $request->validated());
+
+        return ApiResponse::success(
+            QuotationResource::make($quotation),
+            'Quotation submitted on behalf of the provider.',
+            201,
+        );
     }
 
     public function show(Quotation $quotation): JsonResponse

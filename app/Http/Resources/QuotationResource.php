@@ -27,6 +27,7 @@ class QuotationResource extends JsonResource
             'conditions' => $this->conditions,
             'valid_until' => $this->valid_until,
             'status' => $this->status,
+            'submitted_on_behalf' => (bool) $this->submitted_on_behalf,
             'provider' => OrganizationResource::make($this->whenLoaded('providerOrganization')),
             'shipment' => ShipmentResource::make($this->whenLoaded('shipmentRequest')),
             'created_at' => $this->created_at,

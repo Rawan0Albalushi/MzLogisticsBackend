@@ -140,8 +140,34 @@ class TripService
                 'scheduled_departure_at' => $departure->toIso8601String(),
             ], $user);
 
-            return $trip->fresh(['truck', 'driver', 'transportJob']);
+            return $trip->fresh(['truck', 'driver.driverProfile', 'transportJob']);
         });
+    }
+
+    /**
+     * @param  array{trailer_plate?: string|null, delivery_note_number?: string|null, operations_notes?: string|null}  $payload
+     */
+    public function updateOperations(User $user, Trip $trip, array $payload): Trip
+    {
+        if ($trip->status === TripStatus::Cancelled) {
+            throw ValidationException::withMessages([
+                'status' => ['A cancelled trip cannot be updated.'],
+            ]);
+        }
+
+        $changes = [];
+        foreach (['trailer_plate', 'delivery_note_number', 'operations_notes'] as $field) {
+            if (array_key_exists($field, $payload)) {
+                $changes[$field] = $payload[$field];
+            }
+        }
+
+        $before = $trip->only(array_keys($changes));
+        $trip->forceFill($changes)->save();
+
+        AuditLogger::record('trip.operations_updated', $trip, $before, $changes, $user);
+
+        return $trip->fresh(['truck', 'driver.driverProfile', 'transportJob', 'proofOfDelivery', 'driverPayable']);
     }
 
     public function transition(User $user, Trip $trip, TripStatus $next): Trip
@@ -182,8 +208,15 @@ class TripService
      * @param  array<string, mixed>  $payload
      * @param  array<int, UploadedFile>  $photos
      */
-    public function submitProof(User $user, Trip $trip, array $payload, array $photos = [], ?UploadedFile $signature = null): ProofOfDelivery
-    {
+    public function submitProof(
+        User $user,
+        Trip $trip,
+        array $payload,
+        array $photos = [],
+        ?UploadedFile $signature = null,
+        ?UploadedFile $invoice = null,
+        ?UploadedFile $weightTicket = null,
+    ): ProofOfDelivery {
         if ($trip->status !== TripStatus::Arrived && $trip->status !== TripStatus::Delivered) {
             throw ValidationException::withMessages([
                 'status' => ['Proof of delivery can be submitted after arrival.'],
@@ -196,13 +229,18 @@ class TripService
             ]);
         }
 
-        return DB::transaction(function () use ($user, $trip, $payload, $photos, $signature) {
+        return DB::transaction(function () use ($user, $trip, $payload, $photos, $signature, $invoice, $weightTicket) {
+            $existing = $trip->proofOfDelivery;
+            $directory = "pods/{$trip->id}";
+
             $photoPaths = [];
-            foreach ($photos as $index => $photo) {
-                $photoPaths[] = $photo->store("pods/{$trip->id}/photos", 'local');
+            foreach ($photos as $photo) {
+                $photoPaths[] = $photo->store("{$directory}/photos", 'local');
             }
 
-            $signaturePath = $signature?->store("pods/{$trip->id}", 'local');
+            $signaturePath = $signature?->store($directory, 'local');
+            $invoicePath = $this->storePodAttachment($invoice, $existing?->invoice_path, "{$directory}/documents");
+            $weightTicketPath = $this->storePodAttachment($weightTicket, $existing?->weight_ticket_path, "{$directory}/documents");
 
             $receiverName = trim((string) ($payload['receiver_name'] ?? ''));
 
@@ -214,6 +252,8 @@ class TripService
                     'photo_paths' => $photoPaths,
                     'received_quantity' => $payload['received_quantity'],
                     'signature_path' => $signaturePath,
+                    'invoice_path' => $invoicePath,
+                    'weight_ticket_path' => $weightTicketPath,
                     'notes' => $payload['notes'] ?? null,
                     'lat' => $payload['lat'] ?? $trip->current_lat,
                     'lng' => $payload['lng'] ?? $trip->current_lng,
@@ -239,6 +279,33 @@ class TripService
         });
     }
 
+    public function attachPodDocuments(User $user, Trip $trip, ?UploadedFile $invoice = null, ?UploadedFile $weightTicket = null): ProofOfDelivery
+    {
+        $trip->loadMissing('proofOfDelivery');
+        $pod = $trip->proofOfDelivery;
+
+        if (! $pod) {
+            throw ValidationException::withMessages([
+                'documents' => ['Record proof of delivery before uploading these documents.'],
+            ]);
+        }
+
+        return DB::transaction(function () use ($user, $trip, $pod, $invoice, $weightTicket) {
+            $directory = "pods/{$trip->id}/documents";
+            $pod->forceFill([
+                'invoice_path' => $this->storePodAttachment($invoice, $pod->invoice_path, $directory),
+                'weight_ticket_path' => $this->storePodAttachment($weightTicket, $pod->weight_ticket_path, $directory),
+            ])->save();
+
+            AuditLogger::record('pod.documents_uploaded', $pod, [], [
+                'invoice' => $invoice !== null,
+                'weight_ticket' => $weightTicket !== null,
+            ], $user);
+
+            return $pod->fresh();
+        });
+    }
+
     public function streamPodPhoto(Trip $trip, int $index): StreamedResponse
     {
         $trip->loadMissing('proofOfDelivery');
@@ -253,6 +320,20 @@ class TripService
         $trip->loadMissing('proofOfDelivery');
 
         return $this->streamPodFile($trip->proofOfDelivery?->signature_path);
+    }
+
+    public function streamPodInvoice(Trip $trip): StreamedResponse
+    {
+        $trip->loadMissing('proofOfDelivery');
+
+        return $this->streamPodFile($trip->proofOfDelivery?->invoice_path);
+    }
+
+    public function streamPodWeightTicket(Trip $trip): StreamedResponse
+    {
+        $trip->loadMissing('proofOfDelivery');
+
+        return $this->streamPodFile($trip->proofOfDelivery?->weight_ticket_path);
     }
 
     public function recordLocation(User $user, Trip $trip, float $lat, float $lng, ?string $etaAt = null): Trip
@@ -286,8 +367,10 @@ class TripService
                 'transportJob.customerOrganization',
                 'transportJob.providerOrganization',
                 'transportJob.quotation',
+                'transportJob.project',
+                'transportJob.shipmentRequest',
                 'truck',
-                'driver',
+                'driver.driverProfile',
                 'proofOfDelivery',
                 'driverPayable',
             ])
@@ -430,6 +513,19 @@ class TripService
         $testOtp = (string) config('mz.test_otp', '123456');
 
         return $testOtp !== '' && hash_equals($testOtp, $provided);
+    }
+
+    private function storePodAttachment(?UploadedFile $file, ?string $existingPath, string $directory): ?string
+    {
+        if ($file === null) {
+            return $existingPath;
+        }
+
+        if (filled($existingPath)) {
+            Storage::disk('local')->delete($existingPath);
+        }
+
+        return $file->store($directory, 'local');
     }
 
     private function streamPodFile(?string $path): StreamedResponse

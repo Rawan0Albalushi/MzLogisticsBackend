@@ -62,6 +62,7 @@ Route::prefix('v1')->group(function (): void {
         Route::put('/shipments/{shipment}', [ShipmentController::class, 'update']);
         Route::post('/shipments/{shipment}/publish', [ShipmentController::class, 'publish']);
         Route::post('/shipments/{shipment}/cancel', [ShipmentController::class, 'cancel']);
+        Route::post('/shipments/{shipment}/quotations/on-behalf', [QuotationController::class, 'storeOnBehalf']);
         Route::post('/shipments/{shipment}/quotations', [QuotationController::class, 'store']);
 
         Route::get('/quotations', [QuotationController::class, 'index']);
@@ -88,11 +89,15 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/trips', [TripController::class, 'index']);
         Route::get('/trips/{trip}', [TripController::class, 'show']);
         Route::post('/trips/{trip}/assign', [TripController::class, 'assign']);
+        Route::post('/trips/{trip}/operations', [TripController::class, 'updateOperations']);
         Route::post('/trips/{trip}/status', [TripController::class, 'updateStatus']);
         Route::post('/trips/{trip}/location', [TripController::class, 'location']);
         Route::post('/trips/{trip}/pod', [TripController::class, 'storePod']);
+        Route::post('/trips/{trip}/pod/documents', [TripController::class, 'storePodDocuments']);
         Route::get('/trips/{trip}/pod/photos/{index}', [TripController::class, 'podPhoto'])->whereNumber('index');
         Route::get('/trips/{trip}/pod/signature', [TripController::class, 'podSignature']);
+        Route::get('/trips/{trip}/pod/invoice', [TripController::class, 'podInvoice']);
+        Route::get('/trips/{trip}/pod/weight-ticket', [TripController::class, 'podWeightTicket']);
 
         Route::get('/truck-types', [TruckTypeController::class, 'index']);
         Route::post('/truck-types', [TruckTypeController::class, 'store']);

@@ -33,6 +33,7 @@ class RolePermissionSeeder extends Seeder
                 Permissions::SHIPMENTS_VIEW,
                 Permissions::SHIPMENTS_MANAGE,
                 Permissions::QUOTATIONS_VIEW,
+                Permissions::QUOTATIONS_CREATE,
                 Permissions::JOBS_VIEW,
                 Permissions::JOBS_MANAGE,
                 Permissions::TRIPS_VIEW,

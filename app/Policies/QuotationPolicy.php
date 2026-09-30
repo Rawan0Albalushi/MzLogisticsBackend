@@ -39,8 +39,17 @@ class QuotationPolicy
         return $user->isProvider() && $user->can(Permissions::QUOTATIONS_CREATE);
     }
 
+    public function createOnBehalf(User $user): bool
+    {
+        return $user->isPlatform() && $user->can(Permissions::QUOTATIONS_CREATE);
+    }
+
     public function withdraw(User $user, Quotation $quotation): bool
     {
+        if ($quotation->submitted_on_behalf && $user->isPlatform()) {
+            return $user->can(Permissions::QUOTATIONS_CREATE) || $user->can(Permissions::QUOTATIONS_MANAGE);
+        }
+
         return $user->isProvider()
             && $quotation->provider_organization_id === $user->organization_id
             && $user->can(Permissions::QUOTATIONS_MANAGE);

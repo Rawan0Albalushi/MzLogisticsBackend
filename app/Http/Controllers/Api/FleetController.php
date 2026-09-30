@@ -169,7 +169,7 @@ class FleetController extends Controller
                     $q,
                     $request->string('search')->toString(),
                     ['name', 'email', 'phone'],
-                    ['driverProfile' => ['license_number']],
+                    ['driverProfile' => ['license_number', 'civil_id']],
                 );
             })
             ->when($request->filled('status'), function ($q) use ($request) {
@@ -184,12 +184,14 @@ class FleetController extends Controller
     public function storeDriver(Request $request, DriverProvisioningService $provisioning): JsonResponse
     {
         $this->authorizePermission($request, Permissions::DRIVERS_MANAGE);
+        $this->normalizeCivilIdInput($request);
         $data = $request->validate([
             'name' => ['required', 'string', 'max:120'],
             'email' => ['nullable', 'email', 'unique:users,email'],
             'phone' => ['required', 'string', 'max:32'],
             'license_number' => ['nullable', 'string', 'max:80'],
             'license_expires_at' => ['nullable', 'date'],
+            'civil_id' => ['nullable', 'regex:/^\d{5,20}$/', Rule::unique('driver_profiles', 'civil_id')],
             'trip_rate' => ['sometimes', 'nullable', 'numeric', 'min:0'],
         ]);
 
@@ -205,12 +207,14 @@ class FleetController extends Controller
     public function updateDriver(Request $request, User $driver, DriverProvisioningService $provisioning): JsonResponse
     {
         $this->authorizePermission($request, Permissions::DRIVERS_MANAGE);
+        $this->normalizeCivilIdInput($request);
         $data = $request->validate([
             'name' => ['required', 'string', 'max:120'],
             'email' => ['nullable', 'email', Rule::unique('users', 'email')->ignore($driver->id)],
             'phone' => ['required', 'string', 'max:32'],
             'license_number' => ['nullable', 'string', 'max:80'],
             'license_expires_at' => ['nullable', 'date'],
+            'civil_id' => ['nullable', 'regex:/^\d{5,20}$/', Rule::unique('driver_profiles', 'civil_id')->ignore($driver->driverProfile?->id)],
             'trip_rate' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'status' => ['nullable', Rule::enum(DriverStatus::class)],
         ]);
@@ -274,6 +278,16 @@ class FleetController extends Controller
         $data['truck_id'] = $data['truck_id'] ?? null;
 
         return $data;
+    }
+
+    private function normalizeCivilIdInput(Request $request): void
+    {
+        if (! $request->exists('civil_id') || ! is_string($request->input('civil_id'))) {
+            return;
+        }
+
+        $trimmed = preg_replace('/\s+/', '', trim($request->string('civil_id')->toString())) ?? '';
+        $request->merge(['civil_id' => $trimmed === '' ? null : $trimmed]);
     }
 
     private function authorizePermission(Request $request, string $permission): void

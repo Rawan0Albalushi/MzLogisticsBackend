@@ -14,6 +14,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'received_quantity',
     'signature_path',
     'document_path',
+    'invoice_path',
+    'weight_ticket_path',
     'notes',
     'lat',
     'lng',

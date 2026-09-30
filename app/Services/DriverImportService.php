@@ -31,6 +31,9 @@ class DriverImportService
         'license_expires_at' => 'license_expires_at',
         'انتهاء الرخصة' => 'license_expires_at',
         'تاريخ انتهاء الرخصة' => 'license_expires_at',
+        'civil_id' => 'civil_id',
+        'الرقم المدني' => 'civil_id',
+        'رقم الهوية' => 'civil_id',
     ];
 
     public function __construct(private readonly DriverProvisioningService $provisioning) {}
@@ -43,6 +46,7 @@ class DriverImportService
             'email / البريد',
             'license_number / رقم الرخصة',
             'license_expires_at / انتهاء الرخصة',
+            'civil_id / الرقم المدني',
         ], 'drivers-import-template.xlsx');
     }
 

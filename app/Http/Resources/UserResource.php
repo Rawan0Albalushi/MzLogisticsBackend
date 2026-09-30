@@ -30,7 +30,10 @@ class UserResource extends JsonResource
                 $this->relationLoaded('roles') || $this->relationLoaded('permissions'),
                 fn () => $this->getAllPermissions()->pluck('name')->values()
             ),
-            'driver_profile' => $this->whenLoaded('driverProfile'),
+            'driver_profile' => $this->when(
+                $this->relationLoaded('driverProfile') && ! $request->user()?->isCustomer(),
+                fn () => $this->driverProfile,
+            ),
             'documents' => DocumentResource::collection($this->whenLoaded('documents')),
             'last_login_at' => $this->last_login_at,
         ];

@@ -41,6 +41,9 @@ class TripResource extends JsonResource
             'delivered_at' => $this->delivered_at,
             'completed_at' => $this->completed_at,
             'driver_pay_amount' => $this->when((bool) $request->user()?->isPlatform(), $this->driver_pay_amount),
+            'trailer_plate' => $this->trailer_plate,
+            'delivery_note_number' => $this->delivery_note_number,
+            'operations_notes' => $this->when(! $request->user()?->isCustomer(), $this->operations_notes),
             'driver_payable' => $this->when(
                 (bool) $request->user()?->isPlatform() && $this->relationLoaded('driverPayable'),
                 fn () => $this->driverPayable ? [

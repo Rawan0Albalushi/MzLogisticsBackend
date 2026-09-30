@@ -7,6 +7,7 @@ use App\Enums\OrganizationStatus;
 use App\Enums\QuotationStatus;
 use App\Enums\ShipmentStatus;
 use App\Enums\UserType;
+use App\Models\Organization;
 use App\Models\Quotation;
 use App\Models\ShipmentRequest;
 use App\Models\User;
@@ -54,25 +55,52 @@ class QuotationService
                 'shipment_request_id' => $shipment->id,
                 'provider_organization_id' => $user->organization_id,
             ],
-            [
-                'reference' => $existing?->reference ?? ReferenceGenerator::next('QTN', Quotation::class),
-                'created_by' => $user->id,
-                'total_price' => $payload['total_price'],
-                'currency' => $payload['currency'] ?? config('mz.currency'),
-                'truck_count' => $payload['truck_count'],
-                'truck_type' => $payload['truck_type'],
-                'truck_capacity_tons' => $payload['truck_capacity_tons'],
-                'trip_count' => max((int) $payload['truck_count'], (int) $payload['trip_count']),
-                'quantity_per_trip' => $payload['quantity_per_trip'],
-                'duration_days' => $payload['duration_days'],
-                'additional_costs' => $payload['additional_costs'] ?? 0,
-                'conditions' => $payload['conditions'] ?? null,
-                'valid_until' => now()->addDays((int) config('mz.quotation_validity_days')),
-                'status' => QuotationStatus::Submitted,
-            ]
+            $this->quotationValues($user, $payload, $existing, false),
         );
 
         AuditLogger::record('quotation.submitted', $quotation, [], $quotation->toArray(), $user);
+
+        return $quotation->fresh(['providerOrganization', 'shipmentRequest']);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    public function submitOnBehalf(User $admin, ShipmentRequest $shipment, array $payload): Quotation
+    {
+        if ($shipment->status !== ShipmentStatus::Published) {
+            throw ValidationException::withMessages([
+                'shipment' => ['Quotations can only be submitted on published requests.'],
+            ]);
+        }
+
+        $organization = Organization::query()->find($payload['provider_organization_id']);
+        if (! $organization || ! $organization->isProvider() || $organization->status !== OrganizationStatus::Active) {
+            throw ValidationException::withMessages([
+                'provider_organization_id' => ['Choose an active service provider.'],
+            ]);
+        }
+
+        $existing = Quotation::query()
+            ->where('shipment_request_id', $shipment->id)
+            ->where('provider_organization_id', $organization->id)
+            ->first();
+
+        if ($existing && $existing->status !== QuotationStatus::Withdrawn) {
+            throw ValidationException::withMessages([
+                'provider_organization_id' => ['This provider already has a quotation for this request.'],
+            ]);
+        }
+
+        $quotation = Quotation::query()->updateOrCreate(
+            [
+                'shipment_request_id' => $shipment->id,
+                'provider_organization_id' => $organization->id,
+            ],
+            $this->quotationValues($admin, $payload, $existing, true),
+        );
+
+        AuditLogger::record('quotation.submitted_on_behalf', $quotation, [], $quotation->toArray(), $admin);
 
         return $quotation->fresh(['providerOrganization', 'shipmentRequest']);
     }
@@ -136,5 +164,30 @@ class QuotationService
         ListFilters::dateRange($query, $filters, 'created_at');
 
         return $query->paginate((int) ($filters['per_page'] ?? 15));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function quotationValues(User $actor, array $payload, ?Quotation $existing, bool $onBehalf): array
+    {
+        return [
+            'reference' => $existing?->reference ?? ReferenceGenerator::next('QTN', Quotation::class),
+            'created_by' => $actor->id,
+            'submitted_on_behalf' => $onBehalf,
+            'total_price' => $payload['total_price'],
+            'currency' => $payload['currency'] ?? config('mz.currency'),
+            'truck_count' => $payload['truck_count'],
+            'truck_type' => $payload['truck_type'],
+            'truck_capacity_tons' => $payload['truck_capacity_tons'],
+            'trip_count' => max((int) $payload['truck_count'], (int) $payload['trip_count']),
+            'quantity_per_trip' => $payload['quantity_per_trip'],
+            'duration_days' => $payload['duration_days'],
+            'additional_costs' => $payload['additional_costs'] ?? 0,
+            'conditions' => $payload['conditions'] ?? null,
+            'valid_until' => now()->addDays((int) config('mz.quotation_validity_days')),
+            'status' => QuotationStatus::Submitted,
+        ];
     }
 }

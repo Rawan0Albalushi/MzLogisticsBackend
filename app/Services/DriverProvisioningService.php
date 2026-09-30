@@ -18,7 +18,7 @@ class DriverProvisioningService
     public function __construct(private readonly DriverInviteSender $inviteSender) {}
 
     /**
-     * @param  array{name: string, phone: string, email?: string|null, license_number?: string|null, license_expires_at?: string|null, trip_rate?: float|int|string|null}  $payload
+     * @param  array{name: string, phone: string, email?: string|null, license_number?: string|null, license_expires_at?: string|null, civil_id?: string|null, trip_rate?: float|int|string|null}  $payload
      * @return array{driver: User, invite_url: string, whatsapp_sent: bool}
      */
     public function provision(User $actor, array $payload): array
@@ -65,6 +65,7 @@ class DriverProvisioningService
                 'organization_id' => $driver->organization_id,
                 'license_number' => $payload['license_number'] ?? null,
                 'license_expires_at' => $payload['license_expires_at'] ?? null,
+                'civil_id' => $this->normalizeCivilId($payload['civil_id'] ?? null),
                 'trip_rate' => $tripRate,
                 'status' => DriverStatus::Available,
             ]);
@@ -81,7 +82,7 @@ class DriverProvisioningService
     }
 
     /**
-     * @param  array{name: string, phone: string, email?: string|null, license_number?: string|null, license_expires_at?: string|null, trip_rate?: float|int|string|null, status?: string|null}  $payload
+     * @param  array{name: string, phone: string, email?: string|null, license_number?: string|null, license_expires_at?: string|null, civil_id?: string|null, trip_rate?: float|int|string|null, status?: string|null}  $payload
      */
     public function update(User $actor, User $driver, array $payload): User
     {
@@ -129,6 +130,9 @@ class DriverProvisioningService
                 'license_expires_at' => filled($payload['license_expires_at'] ?? null) ? $payload['license_expires_at'] : null,
                 'status' => $payload['status'] ?? $profile->status ?? DriverStatus::Available,
             ];
+            if (array_key_exists('civil_id', $payload)) {
+                $profileData['civil_id'] = $this->normalizeCivilId($payload['civil_id'], $profile->id);
+            }
             if ($actor->isPlatform() && array_key_exists('trip_rate', $payload)) {
                 $profileData['trip_rate'] = $this->tripRate($payload);
             }
@@ -202,6 +206,33 @@ class DriverProvisioningService
         $domain = (string) config('mz.driver_activation.technical_email_domain', 'drivers.mz.local');
 
         return PhoneNumber::digits($normalizedPhone).'@'.$domain;
+    }
+
+    private function normalizeCivilId(mixed $value, ?int $ignoreProfileId = null): ?string
+    {
+        $civilId = preg_replace('/\s+/', '', trim((string) ($value ?? ''))) ?? '';
+        if ($civilId === '') {
+            return null;
+        }
+
+        if (! preg_match('/^\d{5,20}$/', $civilId)) {
+            throw ValidationException::withMessages([
+                'civil_id' => ['The civil ID must be 5 to 20 digits.'],
+            ]);
+        }
+
+        $taken = DriverProfile::query()
+            ->where('civil_id', $civilId)
+            ->when($ignoreProfileId, fn ($query) => $query->whereKeyNot($ignoreProfileId))
+            ->exists();
+
+        if ($taken) {
+            throw ValidationException::withMessages([
+                'civil_id' => ['This civil ID is already registered to another driver.'],
+            ]);
+        }
+
+        return $civilId;
     }
 
     /**

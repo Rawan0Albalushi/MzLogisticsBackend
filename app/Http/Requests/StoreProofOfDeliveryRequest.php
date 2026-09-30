@@ -23,6 +23,8 @@ class StoreProofOfDeliveryRequest extends FormRequest
             'photos' => ['nullable', 'array', 'max:6'],
             'photos.*' => ['file', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'signature' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'invoice' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'weight_ticket' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
         ];
     }
 }

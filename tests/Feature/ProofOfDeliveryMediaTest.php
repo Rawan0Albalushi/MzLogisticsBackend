@@ -77,6 +77,121 @@ class ProofOfDeliveryMediaTest extends TestCase
             ->assertJsonPath('data.receiver_name', null);
     }
 
+    public function test_driver_can_upload_invoice_and_weight_ticket(): void
+    {
+        [$customer, $provider, $driver, $truck] = $this->makeCustomerAndProvider();
+        $tripId = $this->createArrivedTrip($customer, $provider, $driver, $truck);
+        $otp = $this->actingAs($customer, 'sanctum')
+            ->getJson("/api/v1/trips/{$tripId}")
+            ->json('data.otp_code');
+
+        $response = $this->actingAs($driver, 'sanctum')
+            ->post("/api/v1/trips/{$tripId}/pod", [
+                'otp' => $otp,
+                'received_quantity' => 12,
+                'invoice' => UploadedFile::fake()->image('invoice.jpg', 40, 30),
+                'weight_ticket' => UploadedFile::fake()->image('weight-ticket.jpg', 40, 30),
+            ], ['Accept' => 'application/json']);
+
+        $response->assertCreated();
+        $this->assertNotEmpty($response->json('data.invoice_path'));
+        $this->assertNotEmpty($response->json('data.weight_ticket_path'));
+
+        $invoice = $this->actingAs($customer, 'sanctum')
+            ->get("/api/v1/trips/{$tripId}/pod/invoice");
+        $invoice->assertOk();
+        $this->assertNotEmpty($invoice->streamedContent());
+
+        $ticket = $this->actingAs($customer, 'sanctum')
+            ->get("/api/v1/trips/{$tripId}/pod/weight-ticket");
+        $ticket->assertOk();
+        $this->assertNotEmpty($ticket->streamedContent());
+
+        $otherOrg = Organization::query()->create([
+            'type' => OrganizationType::Customer,
+            'account_type' => AccountType::Company,
+            'name' => 'Other Trading',
+            'status' => OrganizationStatus::Active,
+        ]);
+        $other = User::factory()->create([
+            'user_type' => UserType::Customer,
+            'organization_id' => $otherOrg->id,
+        ]);
+        $other->assignRole('Company Admin');
+
+        $this->actingAs($other, 'sanctum')
+            ->get("/api/v1/trips/{$tripId}/pod/invoice")
+            ->assertForbidden();
+        $this->actingAs($other, 'sanctum')
+            ->get("/api/v1/trips/{$tripId}/pod/weight-ticket")
+            ->assertForbidden();
+    }
+
+    public function test_platform_admin_can_upload_pod_documents_on_behalf_of_the_driver(): void
+    {
+        [$customer, $provider, $driver, $truck] = $this->makeCustomerAndProvider();
+        $tripId = $this->createArrivedTrip($customer, $provider, $driver, $truck);
+        $otp = $this->actingAs($customer, 'sanctum')
+            ->getJson("/api/v1/trips/{$tripId}")
+            ->json('data.otp_code');
+
+        $created = $this->actingAs($driver, 'sanctum')
+            ->post("/api/v1/trips/{$tripId}/pod", [
+                'otp' => $otp,
+                'received_quantity' => 12,
+                'invoice' => UploadedFile::fake()->image('invoice.jpg', 40, 30),
+            ], ['Accept' => 'application/json']);
+        $created->assertCreated();
+        $invoicePath = $created->json('data.invoice_path');
+
+        $admin = User::factory()->create(['user_type' => UserType::Platform]);
+        $admin->assignRole('Super Admin');
+
+        $this->actingAs($driver, 'sanctum')
+            ->post("/api/v1/trips/{$tripId}/pod/documents", [
+                'weight_ticket' => UploadedFile::fake()->image('ticket.jpg', 40, 30),
+            ], ['Accept' => 'application/json'])
+            ->assertForbidden();
+
+        $viewer = User::factory()->create(['user_type' => UserType::Platform]);
+        $viewer->assignRole('Viewer');
+        $this->actingAs($viewer, 'sanctum')
+            ->post("/api/v1/trips/{$tripId}/pod/documents", [
+                'weight_ticket' => UploadedFile::fake()->image('ticket.jpg', 40, 30),
+            ], ['Accept' => 'application/json'])
+            ->assertForbidden();
+
+        $updated = $this->actingAs($admin, 'sanctum')
+            ->post("/api/v1/trips/{$tripId}/pod/documents", [
+                'weight_ticket' => UploadedFile::fake()->image('ticket.jpg', 40, 30),
+            ], ['Accept' => 'application/json']);
+
+        $updated->assertOk();
+        $updated->assertJsonPath('data.proof_of_delivery.invoice_path', $invoicePath);
+        $this->assertNotEmpty($updated->json('data.proof_of_delivery.weight_ticket_path'));
+        $updated->assertJsonPath('data.status', TripStatus::Completed->value);
+
+        $ticket = $this->actingAs($customer, 'sanctum')
+            ->get("/api/v1/trips/{$tripId}/pod/weight-ticket");
+        $ticket->assertOk();
+        $this->assertNotEmpty($ticket->streamedContent());
+    }
+
+    public function test_platform_admin_cannot_upload_pod_documents_before_delivery_proof(): void
+    {
+        [$customer, $provider, $driver, $truck] = $this->makeCustomerAndProvider();
+        $tripId = $this->createArrivedTrip($customer, $provider, $driver, $truck);
+        $admin = User::factory()->create(['user_type' => UserType::Platform]);
+        $admin->assignRole('Super Admin');
+
+        $this->actingAs($admin, 'sanctum')
+            ->post("/api/v1/trips/{$tripId}/pod/documents", [
+                'invoice' => UploadedFile::fake()->image('invoice.jpg', 40, 30),
+            ], ['Accept' => 'application/json'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('documents');
+    }
+
     public function test_unrelated_customer_cannot_download_pod_media(): void
     {
         [$customer, $provider, $driver, $truck] = $this->makeCustomerAndProvider();

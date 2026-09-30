@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Enums\TripStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AssignTripRequest;
+use App\Http\Requests\StorePodDocumentsRequest;
 use App\Http\Requests\StoreProofOfDeliveryRequest;
+use App\Http\Requests\UpdateTripOperationsRequest;
 use App\Http\Requests\UpdateTripStatusRequest;
 use App\Http\Resources\TripResource;
 use App\Models\Trip;
@@ -39,7 +41,7 @@ class TripController extends Controller
                 'transportJob.providerOrganization',
                 'transportJob.trips',
                 'truck',
-                'driver',
+                'driver.driverProfile',
                 'proofOfDelivery',
                 'driverPayable',
                 'locations',
@@ -54,6 +56,16 @@ class TripController extends Controller
         return ApiResponse::success(
             TripResource::make($this->trips->assign($request->user(), $trip, $request->validated())),
             'Trip assigned.'
+        );
+    }
+
+    public function updateOperations(UpdateTripOperationsRequest $request, Trip $trip): JsonResponse
+    {
+        $this->authorize('updateOperations', $trip);
+
+        return ApiResponse::success(
+            TripResource::make($this->trips->updateOperations($request->user(), $trip, $request->validated())),
+            'Trip operation log updated.'
         );
     }
 
@@ -94,12 +106,29 @@ class TripController extends Controller
         $pod = $this->trips->submitProof(
             $request->user(),
             $trip,
-            $request->validated(),
+            $request->safe()->except(['photos', 'signature', 'invoice', 'weight_ticket']),
             $request->file('photos', []),
-            $request->file('signature')
+            $request->file('signature'),
+            $request->file('invoice'),
+            $request->file('weight_ticket'),
         );
 
         return ApiResponse::success($pod, 'Proof of delivery recorded.', 201);
+    }
+
+    public function storePodDocuments(StorePodDocumentsRequest $request, Trip $trip): JsonResponse
+    {
+        $this->authorize('uploadPodDocuments', $trip);
+        $this->trips->attachPodDocuments(
+            $request->user(),
+            $trip,
+            $request->file('invoice'),
+            $request->file('weight_ticket'),
+        );
+
+        return ApiResponse::success(
+            TripResource::make($trip->fresh(['truck', 'driver', 'proofOfDelivery', 'transportJob']))
+        );
     }
 
     public function podPhoto(Trip $trip, int $index): StreamedResponse
@@ -114,5 +143,19 @@ class TripController extends Controller
         $this->authorize('view', $trip);
 
         return $this->trips->streamPodSignature($trip);
+    }
+
+    public function podInvoice(Trip $trip): StreamedResponse
+    {
+        $this->authorize('view', $trip);
+
+        return $this->trips->streamPodInvoice($trip);
+    }
+
+    public function podWeightTicket(Trip $trip): StreamedResponse
+    {
+        $this->authorize('view', $trip);
+
+        return $this->trips->streamPodWeightTicket($trip);
     }
 }

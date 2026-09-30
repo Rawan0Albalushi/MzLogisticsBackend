@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'organization_id',
     'license_number',
     'license_expires_at',
+    'civil_id',
     'trip_rate',
     'status',
 ])]
