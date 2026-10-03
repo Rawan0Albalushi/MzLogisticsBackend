@@ -13,6 +13,7 @@ use App\Models\ShipmentRequest;
 use App\Models\User;
 use App\Support\AuditLogger;
 use App\Support\ListFilters;
+use App\Support\QuotationPricing;
 use App\Support\ReferenceGenerator;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Validation\ValidationException;
@@ -172,18 +173,22 @@ class QuotationService
      */
     private function quotationValues(User $actor, array $payload, ?Quotation $existing, bool $onBehalf): array
     {
+        $pricing = QuotationPricing::resolve($payload);
+
         return [
             'reference' => $existing?->reference ?? ReferenceGenerator::next('QTN', Quotation::class),
             'created_by' => $actor->id,
             'submitted_on_behalf' => $onBehalf,
-            'total_price' => $payload['total_price'],
+            'total_price' => $pricing['total_price'],
+            'price_per_trip' => $pricing['price_per_trip'],
             'currency' => $payload['currency'] ?? config('mz.currency'),
             'truck_count' => $payload['truck_count'],
             'truck_type' => $payload['truck_type'],
             'truck_capacity_tons' => $payload['truck_capacity_tons'],
-            'trip_count' => max((int) $payload['truck_count'], (int) $payload['trip_count']),
+            'trip_count' => $pricing['trip_count'],
             'quantity_per_trip' => $payload['quantity_per_trip'],
             'duration_days' => $payload['duration_days'],
+            'transport_start_date' => $payload['transport_start_date'],
             'additional_costs' => $payload['additional_costs'] ?? 0,
             'conditions' => $payload['conditions'] ?? null,
             'valid_until' => now()->addDays((int) config('mz.quotation_validity_days')),

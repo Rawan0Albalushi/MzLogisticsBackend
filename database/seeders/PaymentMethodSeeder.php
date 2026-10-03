@@ -29,6 +29,15 @@ class PaymentMethodSeeder extends Seeder
                 'is_system' => true,
                 'sort_order' => 2,
             ],
+            [
+                'code' => 'bank_transfer',
+                'name' => 'Bank transfer',
+                'name_ar' => 'تحويل بنكي',
+                'processor' => PaymentMethodProcessor::BankTransfer,
+                'is_active' => true,
+                'is_system' => true,
+                'sort_order' => 3,
+            ],
         ];
 
         foreach ($methods as $method) {

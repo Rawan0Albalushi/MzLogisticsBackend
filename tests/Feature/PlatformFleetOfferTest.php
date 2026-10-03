@@ -109,6 +109,7 @@ class PlatformFleetOfferTest extends TestCase
             'trip_count' => 1,
             'quantity_per_trip' => 20,
             'duration_days' => 2,
+            'transport_start_date' => now()->addDay()->toDateString(),
             'conditions' => 'Platform fleet',
         ])->assertCreated();
 
@@ -198,6 +199,7 @@ class PlatformFleetOfferTest extends TestCase
             'trip_count' => 1,
             'quantity_per_trip' => 20,
             'duration_days' => 1,
+            'transport_start_date' => now()->addDay()->toDateString(),
         ])->assertCreated()
             ->assertJsonPath('data.status', 'published')
             ->json('data.id');
@@ -251,6 +253,7 @@ class PlatformFleetOfferTest extends TestCase
             'trip_count' => 1,
             'quantity_per_trip' => 20,
             'duration_days' => 1,
+            'transport_start_date' => now()->addDay()->toDateString(),
             'confirm' => true,
         ])->assertCreated();
 
@@ -286,6 +289,7 @@ class PlatformFleetOfferTest extends TestCase
             'trip_count' => 1,
             'quantity_per_trip' => 20,
             'duration_days' => 1,
+            'transport_start_date' => now()->addDay()->toDateString(),
         ])->assertCreated()->json('data.id');
 
         $this->actingAs($admin, 'sanctum')->postJson("/api/v1/platform-offers/{$offerId}/withdraw")->assertOk();
@@ -376,6 +380,7 @@ class PlatformFleetOfferTest extends TestCase
             'trip_count' => 1,
             'quantity_per_trip' => 20,
             'duration_days' => 2,
+            'transport_start_date' => now()->addDay()->toDateString(),
         ])->assertCreated()->json('data');
     }
 }

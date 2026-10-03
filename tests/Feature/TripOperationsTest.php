@@ -68,6 +68,50 @@ class TripOperationsTest extends TestCase
             ->assertJsonPath('data.operations_notes', null);
     }
 
+    public function test_platform_admin_can_advance_trip_status_on_behalf_of_the_driver(): void
+    {
+        [$customer, $admin] = $this->makeActors();
+        $tripId = $this->acceptedPlatformTrip($customer, $admin);
+
+        $driverId = $this->actingAs($admin, 'sanctum')->postJson('/api/v1/drivers', [
+            'name' => 'Afzal',
+            'phone' => '99331121',
+        ])->assertCreated()->json('data.driver.id');
+        $truckId = $this->actingAs($admin, 'sanctum')->postJson('/api/v1/trucks', [
+            'plate_number' => 'MX 4410',
+            'type' => TruckType::Flatbed->value,
+            'capacity_tons' => 30,
+        ])->assertCreated()->json('data.id');
+
+        $this->actingAs($admin, 'sanctum')->postJson("/api/v1/trips/{$tripId}/assign", [
+            'truck_id' => $truckId,
+            'driver_id' => $driverId,
+            'departure_time' => '10:00',
+            'driver_pay_amount' => 12,
+        ])->assertOk();
+
+        $viewer = User::factory()->create(['user_type' => UserType::Platform]);
+        $viewer->assignRole('Operations Staff');
+
+        $this->actingAs($viewer, 'sanctum')->postJson("/api/v1/trips/{$tripId}/status", [
+            'status' => 'arrived_at_pickup',
+        ])->assertForbidden();
+
+        $this->actingAs($customer, 'sanctum')->postJson("/api/v1/trips/{$tripId}/status", [
+            'status' => 'arrived_at_pickup',
+        ])->assertForbidden();
+
+        $this->actingAs($admin, 'sanctum')->postJson("/api/v1/trips/{$tripId}/status", [
+            'status' => 'in_transit',
+        ])->assertUnprocessable()->assertJsonValidationErrors('status');
+
+        $this->actingAs($admin, 'sanctum')->postJson("/api/v1/trips/{$tripId}/status", [
+            'status' => 'arrived_at_pickup',
+        ])->assertOk()->assertJsonPath('data.status', 'arrived_at_pickup');
+
+        $this->assertNotNull(Trip::query()->whereKey($tripId)->value('arrived_pickup_at'));
+    }
+
     public function test_cancelled_trip_rejects_operation_log_edits(): void
     {
         [$customer, $admin] = $this->makeActors();
@@ -161,6 +205,7 @@ class TripOperationsTest extends TestCase
             'trip_count' => 1,
             'quantity_per_trip' => 20,
             'duration_days' => 1,
+            'transport_start_date' => now()->addDay()->toDateString(),
         ])->assertCreated()->json('data.id');
 
         $jobId = $this->actingAs($customer, 'sanctum')

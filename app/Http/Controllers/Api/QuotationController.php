@@ -13,6 +13,7 @@ use App\Models\ShipmentRequest;
 use App\Services\JobOrchestrationService;
 use App\Services\QuotationService;
 use App\Support\ApiResponse;
+use App\Support\BankTransferResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -84,6 +85,13 @@ class QuotationController extends Controller
             $data['payment_method'] ?? null,
             $request->header('X-Payment-Callback-Base'),
         );
+
+        if ($result->awaitingTransfer && $result->payment) {
+            return ApiResponse::success(
+                BankTransferResponse::awaiting($result->payment),
+                'Bank transfer recorded. The shipment starts after finance confirms the receipt.',
+            );
+        }
 
         if ($result->requiresCheckout) {
             return ApiResponse::success([

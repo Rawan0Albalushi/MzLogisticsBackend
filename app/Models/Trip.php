@@ -107,6 +107,18 @@ class Trip extends Model
         return $this->hasOne(DriverPayable::class);
     }
 
+    public function plannedServiceDate(): ?string
+    {
+        $this->loadMissing('transportJob.quotation', 'transportJob.shipmentRequest');
+        $quotation = $this->transportJob?->quotation;
+        $fromQuotation = $quotation?->serviceDateForSequence((int) $this->sequence);
+        if ($fromQuotation !== null && $fromQuotation !== '') {
+            return $fromQuotation;
+        }
+
+        return $this->transportJob?->shipmentRequest?->required_date?->toDateString();
+    }
+
     public function hasActiveDeliveryOtp(): bool
     {
         if (! filled($this->otp_code)) {

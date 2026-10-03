@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'status',
     'paid_at',
     'paid_by',
+    'receipt_path',
 ])]
 class DriverPayable extends Model
 {
@@ -47,5 +48,10 @@ class DriverPayable extends Model
     public function payer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'paid_by');
+    }
+
+    public function hasReceipt(): bool
+    {
+        return filled($this->receipt_path);
     }
 }

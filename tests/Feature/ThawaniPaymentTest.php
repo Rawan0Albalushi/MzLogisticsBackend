@@ -180,6 +180,7 @@ class ThawaniPaymentTest extends TestCase
             'trip_count' => 2,
             'quantity_per_trip' => 10,
             'duration_days' => 2,
+            'transport_start_date' => now()->addDay()->toDateString(),
         ])->assertCreated();
 
         return [$customer, (int) $quotation->json('data.id')];

@@ -298,6 +298,7 @@ class ProofOfDeliveryMediaTest extends TestCase
             'trip_count' => 1,
             'quantity_per_trip' => 12,
             'duration_days' => 4,
+            'transport_start_date' => now()->addDay()->toDateString(),
         ])->json('data');
 
         $job = $this->actingAs($customer, 'sanctum')

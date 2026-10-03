@@ -16,6 +16,7 @@ class DriverPayableResource extends JsonResource
             'currency' => $this->currency,
             'status' => $this->status,
             'paid_at' => $this->paid_at,
+            'has_receipt' => $this->hasReceipt(),
             'driver' => $this->whenLoaded('driver', fn () => [
                 'id' => $this->driver->id,
                 'name' => $this->driver->name,

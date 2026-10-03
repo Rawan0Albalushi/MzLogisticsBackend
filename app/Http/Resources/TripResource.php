@@ -33,6 +33,7 @@ class TripResource extends JsonResource
             'otp_required' => $otpRequired,
             'otp_code' => $this->when($canSeeOtp, $this->otp_code),
             'assigned_at' => $this->assigned_at,
+            'planned_service_date' => $this->plannedServiceDate(),
             'scheduled_departure_at' => $this->scheduled_departure_at,
             'arrived_pickup_at' => $this->arrived_pickup_at,
             'loaded_at' => $this->loaded_at,

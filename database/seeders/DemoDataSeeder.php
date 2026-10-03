@@ -209,6 +209,7 @@ class DemoDataSeeder extends Seeder
             'trip_count' => 2,
             'quantity_per_trip' => 24,
             'duration_days' => 3,
+            'transport_start_date' => now()->addDays(5)->toDateString(),
             'additional_costs' => 80,
             'conditions' => 'Waiting time after 3 hours billed separately.',
         ]);
@@ -241,6 +242,7 @@ class DemoDataSeeder extends Seeder
             'trip_count' => 1,
             'quantity_per_trip' => 24,
             'duration_days' => 1,
+            'transport_start_date' => now()->addDays(2)->toDateString(),
             'additional_costs' => 0,
             'conditions' => 'Includes loading assistance.',
         ]);

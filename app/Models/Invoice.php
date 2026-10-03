@@ -7,6 +7,7 @@ use App\Enums\InvoiceType;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'reference',
@@ -52,6 +53,11 @@ class Invoice extends Model
     public function payment(): BelongsTo
     {
         return $this->belongsTo(Payment::class);
+    }
+
+    public function sourcePayment(): HasOne
+    {
+        return $this->hasOne(Payment::class, 'invoice_id');
     }
 
     public function isPayable(): bool

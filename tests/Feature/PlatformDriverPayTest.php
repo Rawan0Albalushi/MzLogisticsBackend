@@ -15,6 +15,8 @@ use App\Support\StaffRoles;
 use Database\Seeders\PaymentMethodSeeder;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class PlatformDriverPayTest extends TestCase
@@ -84,7 +86,8 @@ class PlatformDriverPayTest extends TestCase
         $payableId = DriverPayable::query()->where('trip_id', $tripId)->value('id');
         $this->actingAs($customer, 'sanctum')->getJson('/api/v1/driver-payables')->assertForbidden();
         $this->actingAs($admin, 'sanctum')->postJson("/api/v1/driver-payables/{$payableId}/pay")->assertOk()
-            ->assertJsonPath('data.status', 'paid');
+            ->assertJsonPath('data.status', 'paid')
+            ->assertJsonPath('data.has_receipt', false);
         $this->actingAs($admin, 'sanctum')->postJson("/api/v1/driver-payables/{$payableId}/pay")->assertUnprocessable();
     }
 
@@ -119,6 +122,60 @@ class PlatformDriverPayTest extends TestCase
         $this->assertDatabaseCount('driver_payables', 0);
         $jobId = Trip::query()->whereKey($tripId)->value('transport_job_id');
         $this->assertEquals(0.0, (float) $this->actingAs($admin, 'sanctum')->getJson("/api/v1/jobs/{$jobId}")->json('data.driver_cost'));
+    }
+
+    public function test_recording_driver_pay_can_attach_a_receipt(): void
+    {
+        Storage::fake('local');
+        [$customer, $admin] = $this->makeActors();
+
+        $driverId = $this->actingAs($admin, 'sanctum')->postJson('/api/v1/drivers', [
+            'name' => 'Receipt Driver',
+            'phone' => '99330023',
+        ])->assertCreated()->json('data.driver.id');
+        $truckId = $this->actingAs($admin, 'sanctum')->postJson('/api/v1/trucks', [
+            'plate_number' => 'MX 3005',
+            'type' => TruckType::Flatbed->value,
+            'capacity_tons' => 30,
+        ])->assertCreated()->json('data.id');
+
+        $tripId = $this->acceptedPlatformTrip($customer, $admin);
+        $this->actingAs($admin, 'sanctum')->postJson("/api/v1/trips/{$tripId}/assign", [
+            'truck_id' => $truckId,
+            'driver_id' => $driverId,
+            'departure_time' => '10:00',
+            'driver_pay_amount' => 12,
+        ])->assertOk();
+
+        Trip::query()->whereKey($tripId)->update(['status' => 'delivered']);
+        $driver = User::query()->findOrFail($driverId);
+        $this->actingAs($driver, 'sanctum')->postJson("/api/v1/trips/{$tripId}/status", [
+            'status' => 'completed',
+        ])->assertOk();
+
+        $payableId = DriverPayable::query()->where('trip_id', $tripId)->value('id');
+
+        $this->actingAs($admin, 'sanctum')->post("/api/v1/driver-payables/{$payableId}/pay", [
+            'receipt' => UploadedFile::fake()->create('notes.txt', 20, 'text/plain'),
+        ])->assertUnprocessable();
+        $this->assertDatabaseHas('driver_payables', [
+            'id' => $payableId,
+            'status' => 'pending',
+        ]);
+
+        $paid = $this->actingAs($admin, 'sanctum')->post("/api/v1/driver-payables/{$payableId}/pay", [
+            'receipt' => UploadedFile::fake()->image('receipt.jpg'),
+        ])->assertOk();
+        $paid->assertJsonPath('data.status', 'paid');
+        $paid->assertJsonPath('data.has_receipt', true);
+        $this->assertArrayNotHasKey('receipt_path', $paid->json('data'));
+
+        $payable = DriverPayable::query()->findOrFail($payableId);
+        $this->assertNotNull($payable->receipt_path);
+        Storage::disk('local')->assertExists($payable->receipt_path);
+
+        $this->actingAs($customer, 'sanctum')->get("/api/v1/driver-payables/{$payableId}/receipt")->assertForbidden();
+        $this->actingAs($admin, 'sanctum')->get("/api/v1/driver-payables/{$payableId}/receipt")->assertOk();
     }
 
     /**
@@ -170,6 +227,7 @@ class PlatformDriverPayTest extends TestCase
             'trip_count' => 1,
             'quantity_per_trip' => 20,
             'duration_days' => 1,
+            'transport_start_date' => now()->addDay()->toDateString(),
         ])->assertCreated()->json('data.id');
 
         $jobId = $this->actingAs($customer, 'sanctum')

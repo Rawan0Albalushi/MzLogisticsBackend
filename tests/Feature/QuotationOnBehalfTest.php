@@ -40,6 +40,7 @@ class QuotationOnBehalfTest extends TestCase
             ->assertJsonPath('data.provider.id', $provider->organization_id);
 
         $this->assertSame(90.0, (float) $created->json('data.total_price'));
+        $this->assertNull($created->json('data.price_per_trip'));
 
         $this->assertDatabaseHas('quotations', [
             'id' => $created->json('data.id'),
@@ -55,6 +56,27 @@ class QuotationOnBehalfTest extends TestCase
 
         $customerQuotes = collect($this->actingAs($customer, 'sanctum')->getJson('/api/v1/quotations')->assertOk()->json('data'));
         $this->assertTrue($customerQuotes->pluck('id')->contains($created->json('data.id')));
+    }
+
+    public function test_price_per_trip_becomes_the_job_total(): void
+    {
+        $admin = $this->makePlatformUser(StaffRoles::SUPER_ADMIN);
+        $customer = $this->makeCustomer();
+        $provider = $this->makeProvider('Trip Rate Haul');
+        $shipmentId = $this->publishShipment($customer);
+        $payload = $this->quotePayload($provider->organization_id);
+        unset($payload['total_price']);
+        $payload['price_per_trip'] = 25;
+        $payload['truck_count'] = 4;
+        $payload['trip_count'] = 2;
+
+        $created = $this->actingAs($admin, 'sanctum')
+            ->postJson("/api/v1/shipments/{$shipmentId}/quotations/on-behalf", $payload)
+            ->assertCreated();
+
+        $this->assertSame(25.0, (float) $created->json('data.price_per_trip'));
+        $this->assertSame(100.0, (float) $created->json('data.total_price'));
+        $this->assertSame(4, (int) $created->json('data.trip_count'));
     }
 
     public function test_operations_manager_can_submit_and_the_quote_can_become_the_customer_offer(): void
@@ -130,6 +152,7 @@ class QuotationOnBehalfTest extends TestCase
             'trip_count' => 1,
             'quantity_per_trip' => 20,
             'duration_days' => 2,
+            'transport_start_date' => now()->addDay()->toDateString(),
         ])->assertCreated()->json('data.id');
 
         $this->actingAs($admin, 'sanctum')
@@ -255,6 +278,7 @@ class QuotationOnBehalfTest extends TestCase
             'trip_count' => 1,
             'quantity_per_trip' => 20,
             'duration_days' => 2,
+            'transport_start_date' => now()->addDay()->toDateString(),
             'conditions' => 'Entered by operations',
         ];
     }

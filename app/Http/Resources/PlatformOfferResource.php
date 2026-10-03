@@ -10,6 +10,7 @@ class PlatformOfferResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $this->resource->loadMissing('quotation');
         $truckType = is_object($this->truck_type) ? $this->truck_type->value : $this->truck_type;
         $payload = [
             'id' => $this->id,
@@ -24,6 +25,7 @@ class PlatformOfferResource extends JsonResource
             'trip_count' => $this->trip_count,
             'quantity_per_trip' => $this->quantity_per_trip,
             'duration_days' => $this->duration_days,
+            'transport_start_date' => $this->quotation?->transport_start_date?->toDateString(),
             'conditions' => $this->conditions,
             'valid_until' => $this->valid_until,
             'status' => $this->status,

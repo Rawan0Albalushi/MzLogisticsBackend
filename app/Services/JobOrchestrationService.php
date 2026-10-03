@@ -7,6 +7,7 @@ use App\DTOs\QuotationAcceptanceResult;
 use App\Enums\InvoiceStatus;
 use App\Enums\InvoiceType;
 use App\Enums\JobStatus;
+use App\Enums\PaymentMethodProcessor;
 use App\Enums\PaymentStatus;
 use App\Enums\PlatformOfferStatus;
 use App\Enums\QuotationStatus;
@@ -25,6 +26,7 @@ use App\Support\AuditLogger;
 use App\Support\BillingAllocator;
 use App\Support\PaymentTerms;
 use App\Support\ReferenceGenerator;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -167,6 +169,14 @@ class JobOrchestrationService
                 );
             }
 
+            if ($paymentMethod->isBankTransfer()) {
+                return new QuotationAcceptanceResult(
+                    payment: $this->holdBankTransfer($payment),
+                    requiresCheckout: false,
+                    awaitingTransfer: true,
+                );
+            }
+
             if ($paymentMethod->isThawani() && $this->paymentGateway->usesHostedCheckout()) {
                 $checkout = $this->paymentGateway->createCheckout($payment, [
                     'user_id' => $user->id,
@@ -249,6 +259,15 @@ class JobOrchestrationService
                 );
             }
 
+            if ($paymentMethod->isBankTransfer()) {
+                return new InvoicePaymentResult(
+                    payment: $this->holdBankTransfer($payment),
+                    requiresCheckout: false,
+                    awaitingTransfer: true,
+                    job: $job,
+                );
+            }
+
             if ($paymentMethod->isThawani() && $this->paymentGateway->usesHostedCheckout()) {
                 $checkout = $this->paymentGateway->createCheckout($payment, [
                     'user_id' => $user->id,
@@ -298,6 +317,12 @@ class JobOrchestrationService
     {
         return DB::transaction(function () use ($payment, $user) {
             $payment = Payment::query()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
+            if ($this->isBankTransfer($payment) && $payment->status !== PaymentStatus::Completed) {
+                throw ValidationException::withMessages([
+                    'payment' => ['Bank transfers are confirmed after the receipt is uploaded.'],
+                ]);
+            }
+
             $captured = $this->paymentGateway->capture($payment);
 
             if ($captured->status !== PaymentStatus::Completed) {
@@ -361,6 +386,86 @@ class JobOrchestrationService
             ->update([
                 'due_at' => now()->addDays($terms->dueDays),
             ]);
+    }
+
+    /**
+     * @return array{payment: Payment, job: TransportJob|null}
+     */
+    public function confirmBankTransfer(User $user, Payment $payment, UploadedFile $receipt, ?string $transferReference): array
+    {
+        return DB::transaction(function () use ($user, $payment, $receipt, $transferReference) {
+            $payment = Payment::query()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
+
+            return $this->completeBankTransfer($user, $payment, $receipt, $transferReference);
+        });
+    }
+
+    /**
+     * Finance records a bank transfer against an issued customer invoice without a customer checkout.
+     *
+     * @return array{payment: Payment, job: TransportJob|null}
+     */
+    public function recordInvoiceBankTransfer(User $user, Invoice $invoice, UploadedFile $receipt, ?string $transferReference): array
+    {
+        return DB::transaction(function () use ($user, $invoice, $receipt, $transferReference) {
+            $invoice = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->firstOrFail();
+            $this->assertFinanceCanRecordTransfer($invoice);
+            $payment = $this->prepareInvoiceBankTransfer($invoice);
+            $payment = Payment::query()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
+
+            return $this->completeBankTransfer($user, $payment, $receipt, $transferReference);
+        });
+    }
+
+    /**
+     * @return array{payment: Payment, job: TransportJob|null}
+     */
+    private function completeBankTransfer(User $user, Payment $payment, UploadedFile $receipt, ?string $transferReference): array
+    {
+        $this->assertBankTransfer($payment);
+
+        if ($payment->status === PaymentStatus::Completed) {
+            $payment->loadMissing('transportJob');
+
+            return [
+                'payment' => $payment,
+                'job' => $payment->transportJob,
+            ];
+        }
+
+        if (! in_array($payment->status, [PaymentStatus::Pending, PaymentStatus::Processing], true)) {
+            throw ValidationException::withMessages([
+                'payment' => ['This transfer can no longer be confirmed.'],
+            ]);
+        }
+
+        $reference = trim((string) $transferReference);
+        $payment->forceFill([
+            'status' => PaymentStatus::Completed,
+            'gateway' => 'bank_transfer',
+            'gateway_reference' => $reference !== '' ? $reference : 'BANK-'.strtoupper(bin2hex(random_bytes(4))),
+            'paid_at' => now(),
+            'receipt_path' => $receipt->store('payments/'.$payment->id, 'local'),
+            'transfer_reference' => $reference !== '' ? $reference : null,
+            'confirmed_by' => $user->id,
+            'gateway_payload' => array_merge($payment->gateway_payload ?? [], [
+                'verified' => true,
+                'source' => 'bank_transfer',
+                'captured_at' => now()->toIso8601String(),
+            ]),
+        ])->save();
+
+        $job = $this->settleConfirmedTransfer($payment->fresh(), $user);
+
+        AuditLogger::record('payment.transfer_confirmed', $payment, [], [
+            'status' => PaymentStatus::Completed->value,
+            'transfer_reference' => $payment->transfer_reference,
+        ], $user);
+
+        return [
+            'payment' => $payment->fresh(),
+            'job' => $job,
+        ];
     }
 
     public function cancelCheckout(Payment $payment): Payment
@@ -677,21 +782,22 @@ class JobOrchestrationService
                 'provider_amount' => $providerAmount,
                 'currency' => $quotation->currency,
                 'method' => $paymentMethod->code,
-                'status' => PaymentStatus::Processing,
+                'status' => $paymentMethod->isBankTransfer() ? PaymentStatus::Pending : PaymentStatus::Processing,
                 'gateway' => $this->gatewayFor($paymentMethod),
             ]
         );
 
         if ($payment->status === PaymentStatus::Failed) {
             $payment->forceFill([
-                'status' => PaymentStatus::Processing,
+                'status' => $paymentMethod->isBankTransfer() ? PaymentStatus::Pending : PaymentStatus::Processing,
                 'method' => $paymentMethod->code,
                 'gateway' => $this->gatewayFor($paymentMethod),
             ])->save();
-        } elseif ($payment->status !== PaymentStatus::Completed && $payment->method !== $paymentMethod->code) {
+        } elseif ($payment->status !== PaymentStatus::Completed && ($payment->method !== $paymentMethod->code || $paymentMethod->isBankTransfer())) {
             $payment->forceFill([
                 'method' => $paymentMethod->code,
                 'gateway' => $this->gatewayFor($paymentMethod),
+                'status' => $paymentMethod->isBankTransfer() ? PaymentStatus::Pending : $payment->status,
             ])->save();
         }
 
@@ -856,6 +962,12 @@ class JobOrchestrationService
 
     private function captureWithMethod(Payment $payment, PaymentMethod $paymentMethod): void
     {
+        if ($paymentMethod->isBankTransfer()) {
+            throw ValidationException::withMessages([
+                'payment' => ['Bank transfers are confirmed after the receipt is uploaded.'],
+            ]);
+        }
+
         if ($paymentMethod->isCash()) {
             $this->paymentGateway->captureOffline($payment, 'cash');
 
@@ -863,6 +975,154 @@ class JobOrchestrationService
         }
 
         $this->paymentGateway->capture($payment);
+    }
+
+    private function holdBankTransfer(Payment $payment): Payment
+    {
+        if ($payment->status === PaymentStatus::Completed) {
+            return $payment->fresh();
+        }
+
+        $payment->forceFill([
+            'status' => PaymentStatus::Pending,
+            'gateway' => 'bank_transfer',
+        ])->save();
+
+        return $payment->fresh();
+    }
+
+    private function assertBankTransfer(Payment $payment): void
+    {
+        if (! $this->isBankTransfer($payment)) {
+            throw ValidationException::withMessages([
+                'payment' => ['Only a bank transfer can be confirmed with a receipt.'],
+            ]);
+        }
+    }
+
+    private function isBankTransfer(Payment $payment): bool
+    {
+        if ($payment->gateway === 'bank_transfer') {
+            return true;
+        }
+
+        $processor = PaymentMethod::query()->where('code', $payment->method)->value('processor');
+
+        return $processor === PaymentMethodProcessor::BankTransfer->value;
+    }
+
+    private function settleConfirmedTransfer(Payment $payment, User $user): ?TransportJob
+    {
+        if ($payment->invoice_id) {
+            $invoice = Invoice::query()
+                ->with(['transportJob.quotation.providerOrganization'])
+                ->findOrFail($payment->invoice_id);
+            $job = $invoice->transportJob;
+            $this->settleCompletedPayment($payment, $job, $user, $invoice);
+
+            return $job->fresh(['trips', 'shipmentRequest', 'quotation', 'customerOrganization', 'providerOrganization', 'invoices']);
+        }
+
+        return $this->fulfillPaidQuotation($payment, $user);
+    }
+
+    private function assertFinanceCanRecordTransfer(Invoice $invoice): void
+    {
+        if ($invoice->type !== InvoiceType::Customer) {
+            throw ValidationException::withMessages([
+                'invoice' => ['Only customer invoices can be paid here.'],
+            ]);
+        }
+
+        if ($invoice->status === InvoiceStatus::Paid) {
+            throw ValidationException::withMessages([
+                'invoice' => ['This invoice has already been paid.'],
+            ]);
+        }
+
+        if ($invoice->status !== InvoiceStatus::Issued || ! $invoice->isPayable()) {
+            throw ValidationException::withMessages([
+                'invoice' => ['This invoice becomes payable after the shipment is delivered.'],
+            ]);
+        }
+
+        $job = $invoice->transportJob;
+        $unitComplete = $invoice->trip_id
+            ? Trip::query()->whereKey($invoice->trip_id)->where('status', TripStatus::Completed)->exists()
+            : ($job && $job->status === JobStatus::Completed);
+
+        if (! $unitComplete) {
+            throw ValidationException::withMessages([
+                'invoice' => ['This invoice becomes payable after the shipment is delivered.'],
+            ]);
+        }
+    }
+
+    private function prepareInvoiceBankTransfer(Invoice $invoice): Payment
+    {
+        $invoice->loadMissing('transportJob.quotation.providerOrganization', 'transportJob.shipmentRequest');
+        $job = $invoice->transportJob;
+        $quotation = $job?->quotation;
+        $shipment = $job?->shipmentRequest;
+
+        if (! $quotation || ! $shipment) {
+            throw ValidationException::withMessages([
+                'invoice' => ['This invoice cannot be paid.'],
+            ]);
+        }
+
+        $method = PaymentMethod::query()->where('code', 'bank_transfer')->first();
+        if (! $method || ! $method->isBankTransfer()) {
+            throw ValidationException::withMessages([
+                'payment_method' => ['Bank transfer is not available.'],
+            ]);
+        }
+
+        $idempotencyKey = ReferenceGenerator::idempotencyKey('invoice:'.$invoice->id);
+        $existing = Payment::query()->where('invoice_id', $invoice->id)->lockForUpdate()->first()
+            ?? Payment::query()->where('idempotency_key', $idempotencyKey)->lockForUpdate()->first();
+
+        if ($existing) {
+            if ($existing->status === PaymentStatus::Completed) {
+                throw ValidationException::withMessages([
+                    'invoice' => ['This invoice has already been paid.'],
+                ]);
+            }
+
+            if (! $this->isBankTransfer($existing) && $existing->status !== PaymentStatus::Failed) {
+                throw ValidationException::withMessages([
+                    'invoice' => ['Another payment is already in progress for this invoice.'],
+                ]);
+            }
+
+            $existing->forceFill([
+                'invoice_id' => $invoice->id,
+                'payer_organization_id' => $existing->payer_organization_id ?: $invoice->organization_id,
+                'method' => $method->code,
+                'gateway' => 'bank_transfer',
+                'status' => PaymentStatus::Pending,
+            ])->save();
+
+            return $existing;
+        }
+
+        $split = $this->quoteAmounts($quotation, null, $invoice);
+
+        return Payment::query()->create([
+            'reference' => ReferenceGenerator::next('PAY', Payment::class),
+            'idempotency_key' => $idempotencyKey,
+            'shipment_request_id' => $shipment->id,
+            'quotation_id' => $quotation->id,
+            'invoice_id' => $invoice->id,
+            'payer_organization_id' => $invoice->organization_id,
+            'amount' => $split['amount'],
+            'commission_amount' => $split['commission_amount'],
+            'provider_amount' => $split['provider_amount'],
+            'currency' => $quotation->currency,
+            'method' => $method->code,
+            'status' => PaymentStatus::Pending,
+            'gateway' => 'bank_transfer',
+        ]);
     }
 
     private function assertInvoicePayable(User $user, Invoice $invoice): void
@@ -985,6 +1245,10 @@ class JobOrchestrationService
     {
         if ($method->isCash()) {
             return 'cash';
+        }
+
+        if ($method->isBankTransfer()) {
+            return 'bank_transfer';
         }
 
         return $this->paymentGateway->usesHostedCheckout() ? 'thawani' : 'sandbox';

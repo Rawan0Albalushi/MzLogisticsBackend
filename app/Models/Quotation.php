@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'created_by',
     'submitted_on_behalf',
     'total_price',
+    'price_per_trip',
     'currency',
     'truck_count',
     'truck_type',
@@ -24,6 +25,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'trip_count',
     'quantity_per_trip',
     'duration_days',
+    'transport_start_date',
     'additional_costs',
     'conditions',
     'valid_until',
@@ -37,8 +39,10 @@ class Quotation extends Model
             'status' => QuotationStatus::class,
             'submitted_on_behalf' => 'boolean',
             'total_price' => 'decimal:3',
+            'price_per_trip' => 'decimal:3',
             'truck_capacity_tons' => 'decimal:2',
             'quantity_per_trip' => 'decimal:2',
+            'transport_start_date' => 'date',
             'additional_costs' => 'decimal:3',
             'valid_until' => 'datetime',
         ];
@@ -85,5 +89,16 @@ class Quotation extends Model
     public function dispatchTripCount(): int
     {
         return max($this->dispatchTruckCount(), max(1, (int) $this->trip_count));
+    }
+
+    public function serviceDateForSequence(int $sequence): ?string
+    {
+        if ($this->transport_start_date === null) {
+            return null;
+        }
+
+        $offset = intdiv(max(1, $sequence) - 1, $this->dispatchTruckCount());
+
+        return $this->transport_start_date->copy()->addDays($offset)->toDateString();
     }
 }

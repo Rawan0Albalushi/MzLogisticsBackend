@@ -23,7 +23,14 @@ class InvoiceResource extends JsonResource
             'organization' => OrganizationResource::make($this->whenLoaded('organization')),
             'job' => JobResource::make($this->whenLoaded('transportJob')),
             'trip' => TripResource::make($this->whenLoaded('trip')),
-            'payment' => PaymentResource::make($this->whenLoaded('payment')),
+            'payment' => $this->when(
+                $this->relationLoaded('payment') || $this->relationLoaded('sourcePayment'),
+                function () {
+                    $payment = $this->payment ?? ($this->relationLoaded('sourcePayment') ? $this->sourcePayment : null);
+
+                    return $payment ? PaymentResource::make($payment) : null;
+                },
+            ),
         ];
     }
 }

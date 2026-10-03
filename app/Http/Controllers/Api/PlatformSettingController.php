@@ -47,4 +47,26 @@ class PlatformSettingController extends Controller
             'offer_selection_mode' => $mode->value,
         ], 'Offer selection mode updated.');
     }
+
+    public function showBankAccount(): JsonResponse
+    {
+        return ApiResponse::success($this->settings->bankAccount());
+    }
+
+    public function updateBankAccount(Request $request): JsonResponse
+    {
+        abort_unless($request->user()->isPlatform() && $request->user()->can(Permissions::PAYMENTS_MANAGE), 403);
+
+        $data = $request->validate([
+            'bank_name' => ['nullable', 'string', 'max:120'],
+            'account_name' => ['nullable', 'string', 'max:120'],
+            'account_number' => ['nullable', 'string', 'max:64'],
+            'iban' => ['nullable', 'string', 'max:64'],
+        ]);
+
+        return ApiResponse::success(
+            $this->settings->updateBankAccount($request->user(), $data),
+            'Bank account updated.',
+        );
+    }
 }

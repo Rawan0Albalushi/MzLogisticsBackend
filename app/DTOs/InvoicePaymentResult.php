@@ -13,5 +13,6 @@ class InvoicePaymentResult
         public readonly ?TransportJob $job = null,
         public readonly ?string $paymentLink = null,
         public readonly ?string $sessionId = null,
+        public readonly bool $awaitingTransfer = false,
     ) {}
 }

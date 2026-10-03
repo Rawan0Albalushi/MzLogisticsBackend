@@ -206,6 +206,7 @@ class ProjectManagementTest extends TestCase
             'trip_count' => 1,
             'quantity_per_trip' => 10,
             'duration_days' => 1,
+            'transport_start_date' => now()->toDateString(),
             'status' => QuotationStatus::Accepted,
         ]);
 

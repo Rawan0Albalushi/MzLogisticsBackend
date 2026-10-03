@@ -26,6 +26,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'gateway_reference',
     'paid_at',
     'gateway_payload',
+    'receipt_path',
+    'transfer_reference',
+    'confirmed_by',
 ])]
 class Payment extends Model
 {
@@ -59,6 +62,16 @@ class Payment extends Model
     public function payerOrganization(): BelongsTo
     {
         return $this->belongsTo(Organization::class, 'payer_organization_id');
+    }
+
+    public function confirmer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'confirmed_by');
+    }
+
+    public function hasReceipt(): bool
+    {
+        return filled($this->receipt_path);
     }
 
     public function invoices(): HasMany

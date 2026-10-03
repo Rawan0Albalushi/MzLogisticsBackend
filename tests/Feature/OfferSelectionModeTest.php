@@ -220,6 +220,7 @@ class OfferSelectionModeTest extends TestCase
             'trip_count' => 1,
             'quantity_per_trip' => 20,
             'duration_days' => 2,
+            'transport_start_date' => now()->addDay()->toDateString(),
         ])->assertCreated()->json('data');
     }
 }

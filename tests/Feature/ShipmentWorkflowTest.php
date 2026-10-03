@@ -176,6 +176,7 @@ class ShipmentWorkflowTest extends TestCase
             'trip_count' => 2,
             'quantity_per_trip' => 10,
             'duration_days' => 2,
+            'transport_start_date' => now()->addDay()->toDateString(),
         ])->assertCreated();
 
         $accept = $this->actingAs($customer, 'sanctum')
@@ -215,6 +216,7 @@ class ShipmentWorkflowTest extends TestCase
             'trip_count' => 1,
             'quantity_per_trip' => 20,
             'duration_days' => 2,
+            'transport_start_date' => now()->addDay()->toDateString(),
         ])->assertCreated();
 
         $this->assertSame(3, $quotation->json('data.truck_count'));
@@ -257,6 +259,7 @@ class ShipmentWorkflowTest extends TestCase
             'trip_count' => 1,
             'quantity_per_trip' => 12,
             'duration_days' => 4,
+            'transport_start_date' => now()->addDay()->toDateString(),
         ])->json('data');
 
         $job = $this->actingAs($customer, 'sanctum')
@@ -300,6 +303,7 @@ class ShipmentWorkflowTest extends TestCase
             'trip_count' => 1,
             'quantity_per_trip' => 12,
             'duration_days' => 4,
+            'transport_start_date' => now()->addDay()->toDateString(),
         ])->json('data');
 
         $job = $this->actingAs($customer, 'sanctum')
@@ -363,6 +367,7 @@ class ShipmentWorkflowTest extends TestCase
             'trip_count' => 1,
             'quantity_per_trip' => 10,
             'duration_days' => 2,
+            'transport_start_date' => now()->addDay()->toDateString(),
         ])->json('data');
 
         $job = $this->actingAs($customer, 'sanctum')
@@ -434,6 +439,7 @@ class ShipmentWorkflowTest extends TestCase
             'trip_count' => 1,
             'quantity_per_trip' => 8,
             'duration_days' => 1,
+            'transport_start_date' => now()->addDay()->toDateString(),
         ])->json('data');
 
         $this->actingAs($other, 'sanctum')
@@ -469,6 +475,7 @@ class ShipmentWorkflowTest extends TestCase
             'trip_count' => 1,
             'quantity_per_trip' => 12,
             'duration_days' => 1,
+            'transport_start_date' => '2026-06-15',
         ])->json('data');
 
         $job = $this->actingAs($customer, 'sanctum')
@@ -498,6 +505,104 @@ class ShipmentWorkflowTest extends TestCase
         $stored = Trip::query()->findOrFail($tripId)->scheduled_departure_at;
         $this->assertSame(
             '2026-06-15 15:30',
+            $stored->timezone('Asia/Muscat')->format('Y-m-d H:i'),
+        );
+    }
+
+    public function test_quotation_start_date_must_respect_the_customer_required_date(): void
+    {
+        [$customer, $provider] = $this->makeCustomerAndProvider();
+        $required = now()->addDays(2)->toDateString();
+
+        $shipment = $this->actingAs($customer, 'sanctum')->postJson('/api/v1/shipments', [
+            'cargo_type' => 'Cement',
+            'weight_tons' => 12,
+            'quantity' => 12,
+            'pickup_address' => 'Muscat',
+            'pickup_city' => 'Muscat',
+            'delivery_address' => 'Nizwa',
+            'delivery_city' => 'Nizwa',
+            'required_date' => $required,
+            'publish' => true,
+        ])->json('data');
+
+        $this->actingAs($provider, 'sanctum')->postJson("/api/v1/shipments/{$shipment['id']}/quotations", [
+            'total_price' => 900,
+            'truck_count' => 1,
+            'truck_type' => TruckType::Flatbed->value,
+            'truck_capacity_tons' => 30,
+            'trip_count' => 1,
+            'quantity_per_trip' => 12,
+            'duration_days' => 1,
+            'transport_start_date' => now()->addDay()->toDateString(),
+        ])->assertStatus(422)->assertJsonValidationErrors(['transport_start_date']);
+
+        $this->actingAs($provider, 'sanctum')->postJson("/api/v1/shipments/{$shipment['id']}/quotations", [
+            'total_price' => 900,
+            'truck_count' => 1,
+            'truck_type' => TruckType::Flatbed->value,
+            'truck_capacity_tons' => 30,
+            'trip_count' => 1,
+            'quantity_per_trip' => 12,
+            'duration_days' => 1,
+            'transport_start_date' => now()->addDays(3)->toDateString(),
+        ])->assertCreated()
+            ->assertJsonPath('data.transport_start_date', now()->addDays(3)->toDateString());
+    }
+
+    public function test_later_trips_use_the_following_service_days(): void
+    {
+        $this->travelTo(Carbon::parse('2026-06-15 04:00:00', 'UTC'));
+        [$customer, $provider, $driver, $truck] = $this->makeCustomerAndProvider(true);
+
+        $shipment = $this->actingAs($customer, 'sanctum')->postJson('/api/v1/shipments', [
+            'cargo_type' => 'Cement',
+            'weight_tons' => 30,
+            'quantity' => 30,
+            'pickup_address' => 'Muscat',
+            'pickup_city' => 'Muscat',
+            'delivery_address' => 'Nizwa',
+            'delivery_city' => 'Nizwa',
+            'required_date' => '2026-06-16',
+            'publish' => true,
+        ])->json('data');
+
+        $quotation = $this->actingAs($provider, 'sanctum')->postJson("/api/v1/shipments/{$shipment['id']}/quotations", [
+            'total_price' => 900,
+            'truck_count' => 2,
+            'truck_type' => TruckType::Flatbed->value,
+            'truck_capacity_tons' => 30,
+            'trip_count' => 3,
+            'quantity_per_trip' => 10,
+            'duration_days' => 2,
+            'transport_start_date' => '2026-06-16',
+        ])->assertCreated()->json('data');
+
+        $job = $this->actingAs($customer, 'sanctum')
+            ->postJson("/api/v1/quotations/{$quotation['id']}/accept")
+            ->json('data');
+
+        $third = collect($job['trips'])->firstWhere('sequence', 3);
+        $this->assertNotNull($third);
+        $this->assertSame('2026-06-17', $third['planned_service_date']);
+
+        $this->actingAs($provider, 'sanctum')->postJson("/api/v1/trips/{$third['id']}/assign", [
+            'truck_id' => $truck->id,
+            'driver_id' => $driver->id,
+            'departure_date' => '2026-06-15',
+            'departure_time' => '07:00',
+        ])->assertStatus(422)->assertJsonValidationErrors(['departure_date']);
+
+        $this->actingAs($provider, 'sanctum')->postJson("/api/v1/trips/{$third['id']}/assign", [
+            'truck_id' => $truck->id,
+            'driver_id' => $driver->id,
+            'departure_date' => '2026-06-20',
+            'departure_time' => '09:30',
+        ])->assertOk();
+
+        $stored = Trip::query()->findOrFail($third['id'])->scheduled_departure_at;
+        $this->assertSame(
+            '2026-06-20 09:30',
             $stored->timezone('Asia/Muscat')->format('Y-m-d H:i'),
         );
     }

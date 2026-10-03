@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Enums\InvoiceType;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\RecordInvoiceBankTransferRequest;
 use App\Http\Resources\InvoiceResource;
 use App\Http\Resources\JobResource;
 use App\Http\Resources\PaymentResource;
@@ -13,10 +14,12 @@ use App\Models\Settlement;
 use App\Services\JobOrchestrationService;
 use App\Services\SettlementService;
 use App\Support\ApiResponse;
+use App\Support\BankTransferResponse;
 use App\Support\ListFilters;
 use App\Support\Permissions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 
 class FinanceController extends Controller
 {
@@ -57,7 +60,7 @@ class FinanceController extends Controller
         $user = $request->user();
 
         $items = Invoice::query()
-            ->with(['organization', 'transportJob', 'payment', 'trip'])
+            ->with(['organization', 'transportJob', 'payment', 'sourcePayment', 'trip'])
             ->when(! $user->isPlatform(), fn ($q) => $q->where('organization_id', $user->organization_id))
             ->when($user->isProvider(), function ($query) {
                 $query->where(function ($inner) {
@@ -97,6 +100,13 @@ class FinanceController extends Controller
             $request->header('X-Payment-Callback-Base'),
         );
 
+        if ($result->awaitingTransfer) {
+            return ApiResponse::success(
+                BankTransferResponse::awaiting($result->payment, $result->job),
+                'Bank transfer recorded. Finance will confirm the receipt before this invoice is settled.',
+            );
+        }
+
         if ($result->requiresCheckout) {
             return ApiResponse::success([
                 'requires_checkout' => true,
@@ -112,6 +122,24 @@ class FinanceController extends Controller
             'payment' => PaymentResource::make($result->payment)->resolve(),
             'job' => $result->job ? JobResource::make($result->job)->resolve() : null,
         ], 'Invoice paid.');
+    }
+
+    public function recordTransfer(RecordInvoiceBankTransferRequest $request, Invoice $invoice): JsonResponse
+    {
+        $receipt = $request->file('receipt');
+        abort_unless($receipt instanceof UploadedFile, 422);
+
+        $result = $this->jobs->recordInvoiceBankTransfer(
+            $request->user(),
+            $invoice,
+            $receipt,
+            $request->validated('transfer_reference'),
+        );
+
+        return ApiResponse::success([
+            'payment' => PaymentResource::make($result['payment'])->resolve(),
+            'job' => $result['job'] ? JobResource::make($result['job'])->resolve() : null,
+        ], 'Bank transfer recorded.');
     }
 
     public function settlements(Request $request): JsonResponse

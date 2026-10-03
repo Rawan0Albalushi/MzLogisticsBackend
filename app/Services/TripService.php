@@ -35,7 +35,7 @@ class TripService
     ) {}
 
     /**
-     * @param  array{truck_id: int, driver_id: int, departure_time: string, driver_pay_amount?: float|int|string|null}  $payload
+     * @param  array{truck_id: int, driver_id: int, departure_time: string, departure_date?: string|null, driver_pay_amount?: float|int|string|null}  $payload
      */
     public function assign(User $user, Trip $trip, array $payload): Trip
     {
@@ -103,7 +103,11 @@ class TripService
             ]);
         }
 
-        $departure = $this->scheduledDeparture($trip, (string) ($payload['departure_time'] ?? ''));
+        $departure = $this->scheduledDeparture(
+            $trip,
+            (string) ($payload['departure_time'] ?? ''),
+            isset($payload['departure_date']) ? (string) $payload['departure_date'] : null,
+        );
         $driverPay = $user->isPlatform() ? $this->resolveDriverPay($profile, $payload) : null;
 
         return DB::transaction(function () use ($user, $trip, $truck, $driver, $profile, $departure, $driverPay) {
@@ -467,7 +471,7 @@ class TripService
         return round((float) $raw, 3);
     }
 
-    private function scheduledDeparture(Trip $trip, string $time): CarbonInterface
+    private function scheduledDeparture(Trip $trip, string $time, ?string $date = null): CarbonInterface
     {
         if (! preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time)) {
             throw ValidationException::withMessages([
@@ -475,25 +479,25 @@ class TripService
             ]);
         }
 
-        $trip->loadMissing('transportJob.shipmentRequest');
-        $requiredDate = $trip->transportJob?->shipmentRequest?->required_date?->toDateString();
-        if ($requiredDate === null || $requiredDate === '') {
+        $override = is_string($date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) === 1;
+        $serviceDate = $override ? $date : $trip->plannedServiceDate();
+        if ($serviceDate === null || $serviceDate === '') {
             throw ValidationException::withMessages([
-                'departure_time' => ['This shipment has no required date.'],
+                'departure_date' => ['Choose the departure date for this trip.'],
             ]);
         }
 
         $zone = (string) config('mz.business_timezone', 'Asia/Muscat');
-        $departure = Carbon::createFromFormat('Y-m-d H:i:s', $requiredDate.' '.$time.':00', $zone);
+        $departure = Carbon::createFromFormat('Y-m-d H:i:s', $serviceDate.' '.$time.':00', $zone);
         if (! $departure instanceof CarbonInterface) {
             throw ValidationException::withMessages([
-                'departure_time' => ['The departure time is not valid.'],
+                'departure_date' => ['The departure date is not valid.'],
             ]);
         }
 
         if ($departure->lessThanOrEqualTo(now())) {
             throw ValidationException::withMessages([
-                'departure_time' => ['The departure time must be later than now on the customer required date.'],
+                ($override ? 'departure_date' : 'departure_time') => ['The departure must be later than now.'],
             ]);
         }
 

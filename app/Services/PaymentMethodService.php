@@ -17,7 +17,6 @@ class PaymentMethodService
     private const LEGACY_ALIASES = [
         'card' => 'thawani',
         'wallet' => 'thawani',
-        'bank_transfer' => 'thawani',
     ];
 
     /**

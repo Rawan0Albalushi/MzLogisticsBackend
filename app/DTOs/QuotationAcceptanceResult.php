@@ -14,5 +14,6 @@ class QuotationAcceptanceResult
         public readonly ?string $paymentLink = null,
         public readonly ?string $sessionId = null,
         public readonly bool $paymentDeferred = false,
+        public readonly bool $awaitingTransfer = false,
     ) {}
 }

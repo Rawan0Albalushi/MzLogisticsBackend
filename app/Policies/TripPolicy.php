@@ -72,18 +72,16 @@ class TripPolicy
 
     public function updateStatus(User $user, Trip $trip): bool
     {
-        if ($user->isDriver()) {
-            return $trip->driver_user_id === $user->id;
+        if ($user->isPlatform()) {
+            return $user->can(Permissions::TRIPS_UPDATE) && $this->view($user, $trip);
         }
 
-        return $user->isProvider()
-            && $trip->transportJob?->provider_organization_id === $user->organization_id
-            && $user->can(Permissions::TRIPS_UPDATE);
+        return $this->driverOrProviderCanUpdateStatus($user, $trip);
     }
 
     public function submitPod(User $user, Trip $trip): bool
     {
-        return $this->updateStatus($user, $trip) || $user->can(Permissions::POD_CREATE);
+        return $this->driverOrProviderCanUpdateStatus($user, $trip) || $user->can(Permissions::POD_CREATE);
     }
 
     public function uploadPodDocuments(User $user, Trip $trip): bool
@@ -96,5 +94,16 @@ class TripPolicy
     public function track(User $user, Trip $trip): bool
     {
         return $this->view($user, $trip);
+    }
+
+    private function driverOrProviderCanUpdateStatus(User $user, Trip $trip): bool
+    {
+        if ($user->isDriver()) {
+            return $trip->driver_user_id === $user->id;
+        }
+
+        return $user->isProvider()
+            && $trip->transportJob?->provider_organization_id === $user->organization_id
+            && $user->can(Permissions::TRIPS_UPDATE);
     }
 }

@@ -352,6 +352,7 @@ class PaymentContractTest extends TestCase
             'trip_count' => $trips,
             'quantity_per_trip' => 20 / $trips,
             'duration_days' => 2,
+            'transport_start_date' => now()->addDay()->toDateString(),
         ])->json('data.id');
     }
 

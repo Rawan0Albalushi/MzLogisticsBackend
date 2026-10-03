@@ -6,4 +6,5 @@ enum PaymentMethodProcessor: string
 {
     case Thawani = 'thawani';
     case Cash = 'cash';
+    case BankTransfer = 'bank_transfer';
 }

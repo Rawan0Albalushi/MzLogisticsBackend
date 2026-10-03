@@ -43,6 +43,11 @@ class PaymentMethod extends Model
         return $this->processor === PaymentMethodProcessor::Cash;
     }
 
+    public function isBankTransfer(): bool
+    {
+        return $this->processor === PaymentMethodProcessor::BankTransfer;
+    }
+
     public function localizedName(?string $locale = null): string
     {
         $locale ??= app()->getLocale();

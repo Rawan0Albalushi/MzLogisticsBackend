@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Enums\PaymentStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ConfirmBankTransferRequest;
 use App\Http\Resources\JobResource;
 use App\Http\Resources\PaymentResource;
 use App\Models\Payment;
@@ -13,8 +14,11 @@ use App\Support\Permissions;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PaymentController extends Controller
 {
@@ -88,6 +92,35 @@ class PaymentController extends Controller
         }
 
         return response()->json(['received' => true]);
+    }
+
+    public function confirmTransfer(ConfirmBankTransferRequest $request, Payment $payment): JsonResponse
+    {
+        $receipt = $request->file('receipt');
+        abort_unless($receipt instanceof UploadedFile, 422);
+
+        $result = $this->jobs->confirmBankTransfer(
+            $request->user(),
+            $payment,
+            $receipt,
+            $request->validated('transfer_reference'),
+        );
+
+        return ApiResponse::success([
+            'payment' => PaymentResource::make($result['payment'])->resolve(),
+            'job' => $result['job'] ? JobResource::make($result['job'])->resolve() : null,
+        ], 'Bank transfer confirmed.');
+    }
+
+    public function receipt(Request $request, Payment $payment): StreamedResponse
+    {
+        abort_unless($request->user()->isPlatform() && $request->user()->can(Permissions::PAYMENTS_VIEW), 403);
+        abort_unless(filled($payment->receipt_path), 404);
+        abort_unless(Storage::disk('local')->exists($payment->receipt_path), 404);
+
+        return Storage::disk('local')->response($payment->receipt_path, null, [
+            'Cache-Control' => 'private, max-age=3600',
+        ]);
     }
 
     public function status(Request $request, Payment $payment): JsonResponse

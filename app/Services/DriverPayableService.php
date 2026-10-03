@@ -10,6 +10,7 @@ use App\Support\AuditLogger;
 use App\Support\ListFilters;
 use App\Support\ReferenceGenerator;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -65,9 +66,9 @@ class DriverPayableService
             ->paginate((int) ($filters['per_page'] ?? 15));
     }
 
-    public function markPaid(User $user, DriverPayable $payable): DriverPayable
+    public function markPaid(User $user, DriverPayable $payable, ?UploadedFile $receipt = null): DriverPayable
     {
-        return DB::transaction(function () use ($user, $payable) {
+        return DB::transaction(function () use ($user, $payable, $receipt) {
             $locked = DriverPayable::query()->whereKey($payable->id)->lockForUpdate()->firstOrFail();
 
             if ($locked->status !== DriverPayableStatus::Pending) {
@@ -80,10 +81,12 @@ class DriverPayableService
                 'status' => DriverPayableStatus::Paid,
                 'paid_at' => now(),
                 'paid_by' => $user->id,
+                'receipt_path' => $receipt?->store('driver-payables/'.$locked->id, 'local'),
             ])->save();
 
             AuditLogger::record('driver_payable.paid', $locked, [], [
                 'amount' => $locked->amount,
+                'has_receipt' => $locked->hasReceipt(),
             ], $user);
 
             return $locked->fresh(['driver:id,name', 'trip:id,reference', 'transportJob:id,reference']);

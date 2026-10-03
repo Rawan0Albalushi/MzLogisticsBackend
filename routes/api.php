@@ -71,6 +71,8 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/quotations/{quotation}/accept', [QuotationController::class, 'accept']);
         Route::get('/settings/offer-selection', [PlatformSettingController::class, 'showOfferSelection']);
         Route::put('/settings/offer-selection', [PlatformSettingController::class, 'updateOfferSelection']);
+        Route::get('/settings/bank-account', [PlatformSettingController::class, 'showBankAccount']);
+        Route::put('/settings/bank-account', [PlatformSettingController::class, 'updateBankAccount']);
         Route::post('/shipments/{shipment}/platform-offers', [PlatformOfferController::class, 'store']);
         Route::post('/platform-offers/{platformOffer}/withdraw', [PlatformOfferController::class, 'withdraw']);
         Route::post('/platform-offers/{platformOffer}/confirm', [PlatformOfferController::class, 'confirm']);
@@ -134,6 +136,8 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/organizations/{organization}/verify', [OrganizationController::class, 'verify']);
 
         Route::get('/payments', [FinanceController::class, 'payments']);
+        Route::post('/payments/{payment}/confirm-transfer', [PaymentController::class, 'confirmTransfer']);
+        Route::get('/payments/{payment}/receipt', [PaymentController::class, 'receipt']);
         Route::get('/payments/{payment}/status', [PaymentController::class, 'status']);
         Route::get('/payment-contract', [PaymentContractController::class, 'mine']);
         Route::get('/payment-contracts', [PaymentContractController::class, 'index']);
@@ -147,12 +151,14 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('/payment-methods/{payment_method}', [PaymentMethodController::class, 'destroy']);
         Route::get('/invoices', [FinanceController::class, 'invoices']);
         Route::post('/invoices/{invoice}/pay', [FinanceController::class, 'payInvoice']);
+        Route::post('/invoices/{invoice}/record-transfer', [FinanceController::class, 'recordTransfer']);
         Route::get('/settlements', [FinanceController::class, 'settlements']);
         Route::post('/settlements', [FinanceController::class, 'storeSettlement']);
         Route::post('/settlements/request', [FinanceController::class, 'requestSettlement']);
         Route::post('/settlements/{settlement}/complete', [FinanceController::class, 'completeSettlement']);
         Route::get('/driver-payables', [DriverPayableController::class, 'index']);
         Route::post('/driver-payables/{driverPayable}/pay', [DriverPayableController::class, 'pay']);
+        Route::get('/driver-payables/{driverPayable}/receipt', [DriverPayableController::class, 'receipt']);
         Route::get('/wallets', [WalletController::class, 'index']);
         Route::get('/wallets/{wallet}', [WalletController::class, 'show']);
         Route::get('/wallets/{wallet}/transactions', [WalletController::class, 'transactions']);
