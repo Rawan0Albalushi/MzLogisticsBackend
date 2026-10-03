@@ -36,7 +36,7 @@ class WhatsAppDriverInviteTest extends TestCase
         ]);
 
         $provider = $this->makeProvider();
-        $this->actingAs($provider, 'sanctum')
+        $created = $this->actingAs($provider, 'sanctum')
             ->postJson('/api/v1/drivers', [
                 'name' => 'WhatsApp Driver',
                 'phone' => '99227701',
@@ -44,10 +44,14 @@ class WhatsAppDriverInviteTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('data.whatsapp_sent', true);
 
-        Http::assertSent(function ($request) {
+        $code = (string) $created->json('data.activation_code');
+        $display = substr($code, 0, 3).' '.substr($code, 3);
+
+        Http::assertSent(function ($request) use ($display) {
             return $request->url() === 'https://whatsapp.test/messages'
                 && $request->hasHeader('Authorization', 'Bearer test-token')
-                && $request['to'] === '96899227701';
+                && $request['to'] === '96899227701'
+                && str_contains((string) $request['message'], $display);
         });
     }
 
@@ -77,7 +81,7 @@ class WhatsAppDriverInviteTest extends TestCase
                     'name' => 'Another',
                     'phone' => '99227703',
                 ])
-                ->json('data.invite_url')
+                ->json('data.activation_code')
         );
     }
 

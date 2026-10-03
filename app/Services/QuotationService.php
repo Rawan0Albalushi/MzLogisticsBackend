@@ -133,10 +133,7 @@ class QuotationService
         } elseif ($user->user_type === UserType::Customer) {
             $query->whereHas('shipmentRequest', function ($builder) use ($user) {
                 $builder->where('customer_organization_id', $user->organization_id)
-                    ->where(function ($mode) {
-                        $mode->whereNull('offer_selection_mode')
-                            ->orWhere('offer_selection_mode', OfferSelectionMode::Customer->value);
-                    });
+                    ->where('offer_selection_mode', OfferSelectionMode::Customer->value);
             });
         } elseif ($user->user_type === UserType::Driver) {
             $query->whereRaw('1 = 0');

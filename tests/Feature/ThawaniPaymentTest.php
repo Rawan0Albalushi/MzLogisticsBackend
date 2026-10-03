@@ -23,6 +23,7 @@ class ThawaniPaymentTest extends TestCase
     {
         parent::setUp();
         $this->seed(RolePermissionSeeder::class);
+        $this->useCustomerOfferSelection();
 
         config([
             'mz.sandbox_payments' => false,

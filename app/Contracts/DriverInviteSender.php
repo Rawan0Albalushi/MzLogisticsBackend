@@ -6,5 +6,5 @@ use App\Models\User;
 
 interface DriverInviteSender
 {
-    public function send(User $driver, string $inviteUrl): bool;
+    public function send(User $driver, string $activationCode): bool;
 }

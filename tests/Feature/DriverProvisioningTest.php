@@ -40,7 +40,7 @@ class DriverProvisioningTest extends TestCase
             ->assertJsonPath('data.driver.must_set_password', true)
             ->assertJsonPath('data.whatsapp_sent', false);
 
-        $this->assertNotEmpty($response->json('data.invite_url'));
+        $this->assertMatchesRegularExpression('/^\d{6}$/', (string) $response->json('data.activation_code'));
         $this->assertDatabaseHas('users', [
             'phone' => '+96899225501',
             'must_set_password' => true,
@@ -64,13 +64,14 @@ class DriverProvisioningTest extends TestCase
             'password' => 'Password123!',
         ])->assertStatus(422);
 
+        $code = (string) $created->json('data.activation_code');
         $token = DriverActivationToken::query()->firstOrFail();
-        $plain = $this->plainTokenFromUrl($created->json('data.invite_url'));
 
-        $this->assertSame(hash('sha256', $plain), $token->token_hash);
+        $this->assertSame(hash('sha256', '+96899225502|'.$code), $token->token_hash);
 
         $activated = $this->postJson('/api/v1/auth/driver/activate', [
-            'token' => $plain,
+            'phone' => '99225502',
+            'code' => substr($code, 0, 3).' '.substr($code, 3),
             'password' => 'Password123!',
             'password_confirmation' => 'Password123!',
         ])->assertOk();
@@ -110,7 +111,8 @@ class DriverProvisioningTest extends TestCase
             'email' => 'sara@example.com',
             'password' => 'Password123!',
             'password_confirmation' => 'Password123!',
-            'account_type' => 'individual',
+            'account_type' => 'company',
+            'company_name' => 'Sara Trading',
             'phone' => '+968 99001122',
         ])->assertCreated();
 
@@ -207,14 +209,51 @@ class DriverProvisioningTest extends TestCase
             ->assertCreated();
 
         $driverId = $created->json('data.driver.id');
-        $firstUrl = $created->json('data.invite_url');
+        $firstCode = (string) $created->json('data.activation_code');
 
         $resent = $this->actingAs($provider, 'sanctum')
             ->postJson("/api/v1/drivers/{$driverId}/resend-invite")
             ->assertOk();
 
-        $this->assertNotSame($firstUrl, $resent->json('data.invite_url'));
+        $this->assertNotSame($firstCode, $resent->json('data.activation_code'));
         $this->assertSame(1, DriverActivationToken::query()->whereNull('used_at')->count());
+
+        $this->postJson('/api/v1/auth/driver/activate', [
+            'phone' => '99225504',
+            'code' => $firstCode,
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ])->assertStatus(422)->assertJsonValidationErrors(['code']);
+    }
+
+    public function test_activation_code_locks_after_repeated_failures(): void
+    {
+        config(['mz.driver_activation.max_attempts' => 2]);
+        $provider = $this->makeProvider();
+        $created = $this->actingAs($provider, 'sanctum')
+            ->postJson('/api/v1/drivers', [
+                'name' => 'Locked Driver',
+                'phone' => '99225520',
+            ])
+            ->assertCreated();
+        $wrong = $created->json('data.activation_code') === '111111' ? '222222' : '111111';
+
+        $this->postJson('/api/v1/auth/driver/activate', [
+            'phone' => '99225520',
+            'code' => $wrong,
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ])->assertStatus(422)->assertJsonValidationErrors(['code']);
+
+        $this->postJson('/api/v1/auth/driver/activate', [
+            'phone' => '99225520',
+            'code' => $wrong,
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ])->assertStatus(422)
+            ->assertJsonPath('errors.code.0', 'Too many attempts. Ask your company for a new activation code.');
+
+        $this->assertSame(2, DriverActivationToken::query()->firstOrFail()->attempts);
     }
 
     private function makeProvider(string $email = 'provider@example.com', string $name = 'Fast Haul'): User
@@ -233,13 +272,5 @@ class DriverProvisioningTest extends TestCase
         $provider->assignRole('Provider Admin');
 
         return $provider;
-    }
-
-    private function plainTokenFromUrl(string $url): string
-    {
-        $query = parse_url($url, PHP_URL_QUERY) ?: '';
-        parse_str($query, $parts);
-
-        return (string) ($parts['token'] ?? '');
     }
 }

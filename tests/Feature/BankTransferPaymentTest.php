@@ -33,6 +33,7 @@ class BankTransferPaymentTest extends TestCase
     {
         parent::setUp();
         $this->seed(RolePermissionSeeder::class);
+        $this->useCustomerOfferSelection();
         Storage::fake('local');
         Http::fake();
     }

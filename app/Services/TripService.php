@@ -227,13 +227,27 @@ class TripService
             ]);
         }
 
-        if (! $this->otpMatches($trip, (string) ($payload['otp'] ?? ''))) {
+        $otp = trim((string) ($payload['otp'] ?? ''));
+        $otpVerified = false;
+        if ($otp !== '') {
+            if (! $this->otpMatches($trip, $otp)) {
+                throw ValidationException::withMessages([
+                    'otp' => ['The delivery OTP is invalid.'],
+                ]);
+            }
+            $otpVerified = true;
+        } elseif (! $user->isPlatform() && ! $this->otpMatches($trip, $otp)) {
             throw ValidationException::withMessages([
                 'otp' => ['The delivery OTP is invalid.'],
             ]);
         }
 
-        return DB::transaction(function () use ($user, $trip, $payload, $photos, $signature, $invoice, $weightTicket) {
+        $receivedQuantity = $payload['received_quantity'] ?? null;
+        if ($receivedQuantity === '') {
+            $receivedQuantity = null;
+        }
+
+        return DB::transaction(function () use ($user, $trip, $payload, $photos, $signature, $invoice, $weightTicket, $otpVerified, $receivedQuantity) {
             $existing = $trip->proofOfDelivery;
             $directory = "pods/{$trip->id}";
 
@@ -252,9 +266,9 @@ class TripService
                 ['trip_id' => $trip->id],
                 [
                     'receiver_name' => $receiverName !== '' ? $receiverName : null,
-                    'otp_verified' => true,
+                    'otp_verified' => $otpVerified,
                     'photo_paths' => $photoPaths,
-                    'received_quantity' => $payload['received_quantity'],
+                    'received_quantity' => $receivedQuantity ?? $trip->planned_quantity ?? 0,
                     'signature_path' => $signaturePath,
                     'invoice_path' => $invoicePath,
                     'weight_ticket_path' => $weightTicketPath,
@@ -265,9 +279,11 @@ class TripService
                 ]
             );
 
-            $trip->forceFill([
-                'delivered_quantity' => $payload['received_quantity'],
-            ])->save();
+            if ($receivedQuantity !== null) {
+                $trip->forceFill([
+                    'delivered_quantity' => $receivedQuantity,
+                ])->save();
+            }
 
             if ($trip->status === TripStatus::Arrived) {
                 $trip = $this->transition($user, $trip->fresh(), TripStatus::Delivered);
@@ -377,6 +393,8 @@ class TripService
                 'driver.driverProfile',
                 'proofOfDelivery',
                 'driverPayable',
+                'customerInvoice.payment',
+                'customerInvoice.sourcePayment',
             ])
             ->latest();
 

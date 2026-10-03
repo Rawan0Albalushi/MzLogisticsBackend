@@ -6,6 +6,7 @@ use App\Enums\AccountType;
 use App\Enums\OrganizationStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreCustomerRequest;
+use App\Http\Requests\StoreProviderRequest;
 use App\Http\Resources\OrganizationResource;
 use App\Models\Organization;
 use App\Services\AuthService;
@@ -88,6 +89,18 @@ class OrganizationController extends Controller
             ->paginate((int) $request->integer('per_page', 15));
 
         return ApiResponse::success(OrganizationResource::collection($items));
+    }
+
+    public function storeProvider(StoreProviderRequest $request): JsonResponse
+    {
+        $user = $this->auth->provisionProvider($request->validated());
+        $organization = $user->organization;
+
+        AuditLogger::record('provider.created', $organization, [], [
+            'email' => $user->email,
+        ], $request->user());
+
+        return ApiResponse::success(OrganizationResource::make($organization), 'Service provider created.', 201);
     }
 
     public function show(Request $request, Organization $organization): JsonResponse

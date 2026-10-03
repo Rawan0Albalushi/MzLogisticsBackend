@@ -30,6 +30,7 @@ class ShipmentWorkflowTest extends TestCase
         parent::setUp();
         $this->seed(RolePermissionSeeder::class);
         $this->seed(PaymentMethodSeeder::class);
+        $this->useCustomerOfferSelection();
     }
 
     public function test_ton_quantity_is_synced_to_weight_and_legacy_unit_is_normalized(): void

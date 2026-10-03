@@ -44,6 +44,8 @@ class TripController extends Controller
                 'driver.driverProfile',
                 'proofOfDelivery',
                 'driverPayable',
+                'customerInvoice.payment',
+                'customerInvoice.sourcePayment',
                 'locations',
             ]))
         );

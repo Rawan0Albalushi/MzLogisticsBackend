@@ -55,7 +55,7 @@ class DriverImportService
      *     created: int,
      *     failed: int,
      *     invites_sent: int,
-     *     drivers: list<array{row: int, name: string, phone: string|null, invite_url: string, whatsapp_sent: bool}>,
+     *     drivers: list<array{row: int, name: string, phone: string|null, activation_code: string, whatsapp_sent: bool}>,
      *     errors: list<array{row: int, field: string, message: string, name: string|null, phone: string|null, email: string|null, license_number: string|null}>
      * }
      */
@@ -80,7 +80,7 @@ class DriverImportService
                     'row' => $row['number'],
                     'name' => (string) $result['driver']->name,
                     'phone' => $result['driver']->phone,
-                    'invite_url' => $result['invite_url'],
+                    'activation_code' => $result['activation_code'],
                     'whatsapp_sent' => $result['whatsapp_sent'],
                 ];
                 if ($result['whatsapp_sent']) {

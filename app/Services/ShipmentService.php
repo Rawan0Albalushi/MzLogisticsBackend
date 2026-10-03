@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Enums\OfferSelectionMode;
 use App\Enums\OrganizationStatus;
 use App\Enums\QuantityUnit;
 use App\Enums\ShipmentStatus;
@@ -36,9 +35,7 @@ class ShipmentService
             'customer_organization_id' => $this->customerOrganizationId($user, $payload),
             'created_by' => $user->id,
             'status' => $status,
-            'offer_selection_mode' => $status === ShipmentStatus::Published
-                ? $this->settings->offerSelectionMode()
-                : OfferSelectionMode::Customer,
+            'offer_selection_mode' => $this->settings->offerSelectionMode(),
             'published_at' => $status === ShipmentStatus::Published ? now() : null,
         ]);
 

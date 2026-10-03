@@ -29,6 +29,7 @@ class ProofOfDeliveryMediaTest extends TestCase
         parent::setUp();
         $this->seed(RolePermissionSeeder::class);
         $this->seed(PaymentMethodSeeder::class);
+        $this->useCustomerOfferSelection();
     }
 
     public function test_customer_can_download_pod_photo_and_signature(): void
@@ -190,6 +191,57 @@ class ProofOfDeliveryMediaTest extends TestCase
             ], ['Accept' => 'application/json'])
             ->assertUnprocessable()
             ->assertJsonValidationErrors('documents');
+    }
+
+    public function test_platform_admin_can_submit_delivery_proof_on_behalf_of_the_driver(): void
+    {
+        [$customer, $provider, $driver, $truck] = $this->makeCustomerAndProvider();
+        $tripId = $this->createArrivedTrip($customer, $provider, $driver, $truck);
+        $otp = $this->actingAs($customer, 'sanctum')
+            ->getJson("/api/v1/trips/{$tripId}")
+            ->json('data.otp_code');
+
+        $admin = User::factory()->create(['user_type' => UserType::Platform]);
+        $admin->assignRole('Super Admin');
+
+        $this->actingAs($admin, 'sanctum')
+            ->post("/api/v1/trips/{$tripId}/pod", [
+                'otp' => $otp,
+                'received_quantity' => 12,
+                'notes' => 'Delivered by operations',
+                'photos' => [UploadedFile::fake()->image('pod.jpg', 40, 30)],
+                'invoice' => UploadedFile::fake()->image('invoice.jpg', 40, 30),
+                'weight_ticket' => UploadedFile::fake()->image('ticket.jpg', 40, 30),
+            ], ['Accept' => 'application/json'])
+            ->assertCreated()
+            ->assertJsonPath('data.otp_verified', true);
+
+        $this->assertDatabaseHas('trips', [
+            'id' => $tripId,
+            'status' => TripStatus::Completed->value,
+            'delivered_quantity' => 12,
+        ]);
+    }
+
+    public function test_platform_admin_can_mark_delivery_without_proof_fields(): void
+    {
+        [$customer, $provider, $driver, $truck] = $this->makeCustomerAndProvider();
+        $tripId = $this->createArrivedTrip($customer, $provider, $driver, $truck);
+        $admin = User::factory()->create(['user_type' => UserType::Platform]);
+        $admin->assignRole('Super Admin');
+
+        $this->actingAs($admin, 'sanctum')
+            ->post("/api/v1/trips/{$tripId}/pod", [
+                'notes' => 'No documents yet',
+            ], ['Accept' => 'application/json'])
+            ->assertCreated()
+            ->assertJsonPath('data.otp_verified', false);
+
+        $this->assertDatabaseHas('trips', [
+            'id' => $tripId,
+            'status' => TripStatus::Completed->value,
+            'delivered_quantity' => 0,
+        ]);
     }
 
     public function test_unrelated_customer_cannot_download_pod_media(): void

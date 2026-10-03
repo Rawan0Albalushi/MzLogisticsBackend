@@ -30,7 +30,7 @@ class ShipmentResource extends JsonResource
             'required_date' => $this->required_date?->toDateString(),
             'notes' => $this->notes,
             'status' => $this->status,
-            'offer_selection_mode' => $this->offer_selection_mode ?? 'customer',
+            'offer_selection_mode' => $this->offer_selection_mode ?? 'admin',
             'published_at' => $this->published_at,
             'customer' => OrganizationResource::make($this->whenLoaded('customerOrganization')),
             'quotations' => $this->when(

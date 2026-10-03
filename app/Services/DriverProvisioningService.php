@@ -19,7 +19,7 @@ class DriverProvisioningService
 
     /**
      * @param  array{name: string, phone: string, email?: string|null, license_number?: string|null, license_expires_at?: string|null, civil_id?: string|null, trip_rate?: float|int|string|null}  $payload
-     * @return array{driver: User, invite_url: string, whatsapp_sent: bool}
+     * @return array{driver: User, activation_code: string, whatsapp_sent: bool}
      */
     public function provision(User $actor, array $payload): array
     {
@@ -71,11 +71,11 @@ class DriverProvisioningService
             ]);
 
             $invite = $this->issueInvite($driver);
-            $sent = $this->inviteSender->send($driver->fresh(), $invite['url']);
+            $sent = $this->inviteSender->send($driver->fresh(), $invite['code']);
 
             return [
                 'driver' => $driver->load('driverProfile'),
-                'invite_url' => $invite['url'],
+                'activation_code' => $invite['code'],
                 'whatsapp_sent' => $sent,
             ];
         });
@@ -114,11 +114,19 @@ class DriverProvisioningService
         }
 
         return DB::transaction(function () use ($actor, $driver, $payload, $phone, $email) {
+            $phoneChanged = $driver->phone !== $phone;
             $driver->fill([
                 'name' => $payload['name'],
                 'email' => $email,
                 'phone' => $phone,
             ])->save();
+
+            if ($phoneChanged && $driver->must_set_password) {
+                DriverActivationToken::query()
+                    ->where('user_id', $driver->id)
+                    ->whereNull('used_at')
+                    ->update(['used_at' => now()]);
+            }
 
             $profile = $driver->driverProfile ?? new DriverProfile([
                 'user_id' => $driver->id,
@@ -143,7 +151,7 @@ class DriverProvisioningService
     }
 
     /**
-     * @return array{driver: User, invite_url: string, whatsapp_sent: bool}
+     * @return array{driver: User, activation_code: string, whatsapp_sent: bool}
      */
     public function resendInvite(User $actor, User $driver): array
     {
@@ -161,44 +169,50 @@ class DriverProvisioningService
         }
 
         $invite = $this->issueInvite($driver);
-        $sent = $this->inviteSender->send($driver, $invite['url']);
+        $sent = $this->inviteSender->send($driver, $invite['code']);
 
         return [
             'driver' => $driver->load('driverProfile'),
-            'invite_url' => $invite['url'],
+            'activation_code' => $invite['code'],
             'whatsapp_sent' => $sent,
         ];
     }
 
     /**
-     * @return array{url: string, token: string}
+     * @return array{code: string}
      */
     public function issueInvite(User $driver): array
     {
-        DriverActivationToken::query()
-            ->where('user_id', $driver->id)
-            ->whereNull('used_at')
-            ->update(['used_at' => now()]);
+        return DB::transaction(function () use ($driver) {
+            DriverActivationToken::query()
+                ->where('user_id', $driver->id)
+                ->whereNull('used_at')
+                ->update(['used_at' => now()]);
 
-        $plain = Str::random(64);
-        DriverActivationToken::query()->create([
-            'user_id' => $driver->id,
-            'token_hash' => hash('sha256', $plain),
-            'expires_at' => now()->addDays((int) config('mz.driver_activation.expires_days', 7)),
-        ]);
+            $phone = (string) $driver->phone;
+            $expiresAt = now()->addDays((int) config('mz.driver_activation.expires_days', 7));
 
-        return [
-            'token' => $plain,
-            'url' => $this->inviteUrl($plain),
-        ];
-    }
+            for ($attempt = 0; $attempt < 5; $attempt++) {
+                $code = str_pad((string) random_int(0, 999_999), 6, '0', STR_PAD_LEFT);
+                $hash = DriverActivationToken::hashFor($phone, $code);
+                if (DriverActivationToken::query()->where('token_hash', $hash)->exists()) {
+                    continue;
+                }
 
-    public function inviteUrl(string $plainToken): string
-    {
-        $base = rtrim((string) config('mz.driver_activation.invite_base_url'), '?&');
-        $separator = str_contains($base, '?') ? '&' : '?';
+                DriverActivationToken::query()->create([
+                    'user_id' => $driver->id,
+                    'token_hash' => $hash,
+                    'attempts' => 0,
+                    'expires_at' => $expiresAt,
+                ]);
 
-        return $base.$separator.'token='.urlencode($plainToken);
+                return ['code' => $code];
+            }
+
+            throw ValidationException::withMessages([
+                'driver' => ['Unable to create an activation code. Try again.'],
+            ]);
+        });
     }
 
     public function technicalEmail(string $normalizedPhone): string

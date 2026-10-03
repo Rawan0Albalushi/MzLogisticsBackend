@@ -199,7 +199,7 @@ class FleetController extends Controller
 
         return ApiResponse::success([
             'driver' => UserResource::make($result['driver'])->resolve(),
-            'invite_url' => $result['invite_url'],
+            'activation_code' => $result['activation_code'],
             'whatsapp_sent' => $result['whatsapp_sent'],
         ], 'Driver added.', 201);
     }
@@ -250,9 +250,9 @@ class FleetController extends Controller
 
         return ApiResponse::success([
             'driver' => UserResource::make($result['driver'])->resolve(),
-            'invite_url' => $result['invite_url'],
+            'activation_code' => $result['activation_code'],
             'whatsapp_sent' => $result['whatsapp_sent'],
-        ], 'Activation invite sent.');
+        ], 'Activation code sent.');
     }
 
     /**

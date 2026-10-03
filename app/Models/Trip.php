@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\InvoiceType;
 use App\Enums\TripStatus;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -105,6 +106,11 @@ class Trip extends Model
     public function driverPayable(): HasOne
     {
         return $this->hasOne(DriverPayable::class);
+    }
+
+    public function customerInvoice(): HasOne
+    {
+        return $this->hasOne(Invoice::class)->where('type', InvoiceType::Customer);
     }
 
     public function plannedServiceDate(): ?string

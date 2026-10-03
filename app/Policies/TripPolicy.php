@@ -81,6 +81,10 @@ class TripPolicy
 
     public function submitPod(User $user, Trip $trip): bool
     {
+        if ($user->isPlatform() && $user->can(Permissions::TRIPS_UPDATE)) {
+            return $this->view($user, $trip);
+        }
+
         return $this->driverOrProviderCanUpdateStatus($user, $trip) || $user->can(Permissions::POD_CREATE);
     }
 

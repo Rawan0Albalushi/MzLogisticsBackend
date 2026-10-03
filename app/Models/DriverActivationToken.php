@@ -9,14 +9,21 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable([
     'user_id',
     'token_hash',
+    'attempts',
     'expires_at',
     'used_at',
 ])]
 class DriverActivationToken extends Model
 {
+    public static function hashFor(string $phone, string $code): string
+    {
+        return hash('sha256', $phone.'|'.$code);
+    }
+
     protected function casts(): array
     {
         return [
+            'attempts' => 'integer',
             'expires_at' => 'datetime',
             'used_at' => 'datetime',
         ];

@@ -52,11 +52,12 @@ class AuthController extends Controller
     public function activateDriver(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'token' => ['required', 'string'],
+            'phone' => ['required', 'string', 'max:32'],
+            'code' => ['required', 'string', 'max:16'],
             'password' => ['required', 'confirmed', PasswordRule::min(8)],
         ]);
 
-        $result = $this->authService->activateDriver($data['token'], $data['password']);
+        $result = $this->authService->activateDriver($data['phone'], $data['code'], $data['password']);
 
         return ApiResponse::success([
             'token' => $result['token'],

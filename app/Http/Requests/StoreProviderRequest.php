@@ -1,17 +1,21 @@
 <?php
 
-namespace App\Http\Requests\Auth;
+namespace App\Http\Requests;
 
-use App\Enums\AccountType;
+use App\Support\Permissions;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 
-class RegisterCustomerRequest extends FormRequest
+class StoreProviderRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        $user = $this->user();
+
+        return $user !== null
+            && $user->isPlatform()
+            && $user->can(Permissions::PROVIDERS_MANAGE);
     }
 
     public function rules(): array
@@ -22,9 +26,10 @@ class RegisterCustomerRequest extends FormRequest
             'password' => ['required', 'confirmed', Password::min(8)],
             'phone' => ['nullable', 'string', 'max:32'],
             'locale' => ['nullable', Rule::in(['ar', 'en'])],
-            'account_type' => ['required', Rule::in([AccountType::Company->value])],
             'company_name' => ['required', 'string', 'max:190'],
             'company_name_ar' => ['nullable', 'string', 'max:190'],
+            'commercial_register' => ['nullable', 'string', 'max:80'],
+            'tax_number' => ['nullable', 'string', 'max:80'],
             'city' => ['nullable', 'string', 'max:120'],
             'country' => ['nullable', 'string', 'size:2'],
             'address' => ['nullable', 'string', 'max:500'],

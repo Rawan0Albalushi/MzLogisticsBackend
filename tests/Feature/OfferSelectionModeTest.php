@@ -26,9 +26,16 @@ class OfferSelectionModeTest extends TestCase
         $this->seed(PaymentMethodSeeder::class);
     }
 
-    public function test_customer_selection_remains_the_default_and_is_frozen_on_publish(): void
+    public function test_admin_selection_is_the_default_and_customer_mode_stays_frozen_after_publish(): void
     {
         [$customer, $provider, $admin] = $this->makeActors();
+
+        $defaultShipmentId = $this->publishShipment($customer);
+        $this->assertSame('admin', $this->actingAs($customer, 'sanctum')->getJson("/api/v1/shipments/{$defaultShipmentId}")->json('data.offer_selection_mode'));
+
+        $this->actingAs($admin, 'sanctum')->putJson('/api/v1/settings/offer-selection', [
+            'offer_selection_mode' => 'customer',
+        ])->assertOk();
 
         $shipmentId = $this->publishShipment($customer);
         $this->assertSame('customer', $this->actingAs($customer, 'sanctum')->getJson("/api/v1/shipments/{$shipmentId}")->json('data.offer_selection_mode'));
@@ -38,6 +45,7 @@ class OfferSelectionModeTest extends TestCase
         ])->assertOk();
 
         $this->assertSame('customer', $this->actingAs($customer, 'sanctum')->getJson("/api/v1/shipments/{$shipmentId}")->json('data.offer_selection_mode'));
+        $this->assertSame('admin', $this->actingAs($customer, 'sanctum')->getJson("/api/v1/shipments/{$defaultShipmentId}")->json('data.offer_selection_mode'));
 
         $quotationId = $this->submitQuotation($provider, $shipmentId, 500)['id'];
         $visible = $this->actingAs($customer, 'sanctum')->getJson("/api/v1/shipments/{$shipmentId}")->assertOk();

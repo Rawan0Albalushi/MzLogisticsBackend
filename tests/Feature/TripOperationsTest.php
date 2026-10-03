@@ -3,10 +3,13 @@
 namespace Tests\Feature;
 
 use App\Enums\AccountType;
+use App\Enums\InvoiceStatus;
+use App\Enums\InvoiceType;
 use App\Enums\OrganizationStatus;
 use App\Enums\OrganizationType;
 use App\Enums\TruckType;
 use App\Enums\UserType;
+use App\Models\Invoice;
 use App\Models\Organization;
 use App\Models\Trip;
 use App\Models\User;
@@ -154,6 +157,50 @@ class TripOperationsTest extends TestCase
             'phone' => '99331101',
             'civil_id' => '12',
         ])->assertUnprocessable()->assertJsonValidationErrors('civil_id');
+    }
+
+    public function test_platform_trip_list_includes_the_customer_invoice_summary(): void
+    {
+        [$customer, $admin] = $this->makeActors();
+        $tripId = $this->acceptedPlatformTrip($customer, $admin);
+        $trip = Trip::query()->with('transportJob')->findOrFail($tripId);
+        $dueAt = now()->addDays(20)->startOfDay();
+
+        Invoice::query()->create([
+            'reference' => 'INV-TRIP-CUST',
+            'organization_id' => $trip->transportJob->customer_organization_id,
+            'transport_job_id' => $trip->transport_job_id,
+            'trip_id' => $trip->id,
+            'type' => InvoiceType::Customer,
+            'amount' => 150,
+            'currency' => 'OMR',
+            'status' => InvoiceStatus::Issued,
+            'issued_at' => now(),
+            'due_at' => $dueAt,
+        ]);
+        Invoice::query()->create([
+            'reference' => 'INV-TRIP-PROV',
+            'organization_id' => $trip->transportJob->provider_organization_id,
+            'transport_job_id' => $trip->transport_job_id,
+            'trip_id' => $trip->id,
+            'type' => InvoiceType::Provider,
+            'amount' => 120,
+            'currency' => 'OMR',
+            'status' => InvoiceStatus::Paid,
+            'issued_at' => now(),
+        ]);
+
+        $listed = $this->actingAs($admin, 'sanctum')->getJson('/api/v1/trips')->assertOk();
+        $row = collect($listed->json('data'))->firstWhere('id', $tripId);
+        $this->assertNotNull($row);
+        $this->assertSame('issued', $row['customer_invoice']['status']);
+        $this->assertSame($dueAt->toJSON(), $row['customer_invoice']['due_at']);
+        $this->assertNull($row['customer_invoice']['paid_at']);
+
+        $hidden = $this->actingAs($customer, 'sanctum')->getJson('/api/v1/trips')->assertOk();
+        $customerRow = collect($hidden->json('data'))->firstWhere('id', $tripId);
+        $this->assertNotNull($customerRow);
+        $this->assertArrayNotHasKey('customer_invoice', $customerRow);
     }
 
     /**

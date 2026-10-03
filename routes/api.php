@@ -37,7 +37,7 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/register/customer', [AuthController::class, 'registerCustomer']);
         Route::post('/register/provider', [AuthController::class, 'registerProvider']);
         Route::post('/login', [AuthController::class, 'login']);
-        Route::post('/driver/activate', [AuthController::class, 'activateDriver']);
+        Route::post('/driver/activate', [AuthController::class, 'activateDriver'])->middleware('throttle:10,1');
         Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
         Route::post('/reset-password', [AuthController::class, 'resetPassword']);
     });
@@ -128,6 +128,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/customers', [OrganizationController::class, 'customers']);
         Route::post('/customers', [OrganizationController::class, 'storeCustomer']);
         Route::get('/providers', [OrganizationController::class, 'providers']);
+        Route::post('/providers', [OrganizationController::class, 'storeProvider']);
         Route::get('/documents/{document}/file', [DocumentController::class, 'download']);
         Route::get('/organizations/{organization}', [OrganizationController::class, 'show']);
         Route::post('/organizations/{organization}/documents', [DocumentController::class, 'storeForOrganization']);

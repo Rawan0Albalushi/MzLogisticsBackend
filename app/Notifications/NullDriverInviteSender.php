@@ -7,7 +7,7 @@ use App\Models\User;
 
 class NullDriverInviteSender implements DriverInviteSender
 {
-    public function send(User $driver, string $inviteUrl): bool
+    public function send(User $driver, string $activationCode): bool
     {
         return false;
     }

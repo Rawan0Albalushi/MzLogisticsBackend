@@ -15,7 +15,7 @@ return [
     'payment_due_days_max' => (int) env('MZ_PAYMENT_DUE_DAYS_MAX', 730),
     'driver_activation' => [
         'expires_days' => (int) env('DRIVER_ACTIVATION_EXPIRES_DAYS', 7),
-        'invite_base_url' => env('DRIVER_INVITE_BASE_URL', 'mzdriver://activate'),
+        'max_attempts' => (int) env('DRIVER_ACTIVATION_MAX_ATTEMPTS', 5),
         'technical_email_domain' => env('DRIVER_TECHNICAL_EMAIL_DOMAIN', 'drivers.mz.local'),
         'import_max_rows' => (int) env('DRIVER_IMPORT_MAX_ROWS', 200),
     ],

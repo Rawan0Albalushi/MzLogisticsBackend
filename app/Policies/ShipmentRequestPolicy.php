@@ -43,19 +43,29 @@ class ShipmentRequestPolicy
 
     public function update(User $user, ShipmentRequest $shipment): bool
     {
-        return $user->isCustomer()
-            && $shipment->customer_organization_id === $user->organization_id
-            && $user->can(Permissions::SHIPMENTS_MANAGE);
+        if ($user->isPlatform()) {
+            return $user->can(Permissions::SHIPMENTS_MANAGE)
+                && $shipment->status === ShipmentStatus::Draft;
+        }
+
+        return $this->customerCanRevise($user, $shipment);
     }
 
     public function publish(User $user, ShipmentRequest $shipment): bool
     {
-        return $this->update($user, $shipment);
+        return $this->customerCanRevise($user, $shipment);
     }
 
     public function cancel(User $user, ShipmentRequest $shipment): bool
     {
-        return $this->update($user, $shipment)
+        return $this->customerCanRevise($user, $shipment)
             || ($user->isPlatform() && $user->can(Permissions::SHIPMENTS_MANAGE));
+    }
+
+    private function customerCanRevise(User $user, ShipmentRequest $shipment): bool
+    {
+        return $user->isCustomer()
+            && $shipment->customer_organization_id === $user->organization_id
+            && $user->can(Permissions::SHIPMENTS_MANAGE);
     }
 }

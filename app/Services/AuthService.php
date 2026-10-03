@@ -39,12 +39,12 @@ class AuthService
     public function provisionCustomer(array $payload): User
     {
         return DB::transaction(function () use ($payload) {
-            $accountType = AccountType::from($payload['account_type'] ?? AccountType::Individual->value);
+            $accountType = AccountType::Company;
 
             $organization = Organization::query()->create([
                 'type' => OrganizationType::Customer,
                 'account_type' => $accountType,
-                'name' => $payload['company_name'] ?? $payload['name'],
+                'name' => $payload['company_name'],
                 'name_ar' => $payload['company_name_ar'] ?? null,
                 'email' => $payload['email'],
                 'phone' => $payload['phone'] ?? null,
@@ -78,7 +78,19 @@ class AuthService
      */
     public function registerProvider(array $payload): array
     {
-        return DB::transaction(function () use ($payload) {
+        return $this->issueToken($this->provisionProvider($payload, OrganizationStatus::Pending));
+    }
+
+    /**
+     * Create a provider organization and its sign-in user.
+     *
+     * Self-registration stays pending until review. Admin provisioning is active.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function provisionProvider(array $payload, OrganizationStatus $status = OrganizationStatus::Active): User
+    {
+        return DB::transaction(function () use ($payload, $status) {
             $organization = Organization::query()->create([
                 'type' => OrganizationType::Provider,
                 'account_type' => AccountType::Company,
@@ -91,7 +103,7 @@ class AuthService
                 'city' => $payload['city'] ?? null,
                 'country' => $payload['country'] ?? 'OM',
                 'address' => $payload['address'] ?? null,
-                'status' => OrganizationStatus::Pending,
+                'status' => $status,
             ]);
 
             $user = User::query()->create([
@@ -107,7 +119,7 @@ class AuthService
 
             $user->assignRole('Provider Admin');
 
-            return $this->issueToken($user);
+            return $user->load('organization');
         });
     }
 
@@ -144,21 +156,56 @@ class AuthService
     /**
      * @return array{user: User, token: string}
      */
-    public function activateDriver(string $plainToken, string $password): array
+    public function activateDriver(string $phoneInput, string $codeInput, string $password): array
     {
-        $token = DriverActivationToken::query()
-            ->with('user')
-            ->where('token_hash', hash('sha256', $plainToken))
-            ->first();
-
-        if (! $token || ! $token->isUsable() || ! $token->user?->isDriver()) {
+        $phone = PhoneNumber::normalize($phoneInput);
+        if ($phone === null) {
             throw ValidationException::withMessages([
-                'token' => ['This activation link is invalid or has expired.'],
+                'phone' => ['A valid mobile number is required.'],
             ]);
         }
 
-        return DB::transaction(function () use ($token, $password) {
-            $user = $token->user;
+        $code = preg_replace('/\D+/', '', $codeInput) ?? '';
+        if (strlen($code) !== 6) {
+            throw ValidationException::withMessages([
+                'code' => ['Enter the 6-digit activation code.'],
+            ]);
+        }
+
+        $user = User::query()
+            ->where('phone', $phone)
+            ->where('user_type', UserType::Driver)
+            ->first();
+
+        if (! $user || ! $user->must_set_password || ! $user->is_active) {
+            throw ValidationException::withMessages([
+                'code' => ['This activation code is invalid or has expired.'],
+            ]);
+        }
+
+        $maxAttempts = max(1, (int) config('mz.driver_activation.max_attempts', 5));
+        $outcome = DB::transaction(function () use ($user, $phone, $code, $password, $maxAttempts) {
+            $token = DriverActivationToken::query()
+                ->where('user_id', $user->id)
+                ->whereNull('used_at')
+                ->lockForUpdate()
+                ->latest('id')
+                ->first();
+
+            if (! $token || ! $token->isUsable()) {
+                return 'invalid';
+            }
+
+            if ($token->attempts >= $maxAttempts) {
+                return 'locked';
+            }
+
+            if (! hash_equals($token->token_hash, DriverActivationToken::hashFor($phone, $code))) {
+                $token->increment('attempts');
+
+                return $token->attempts >= $maxAttempts ? 'locked' : 'invalid';
+            }
+
             $user->forceFill([
                 'password' => $password,
                 'must_set_password' => false,
@@ -176,6 +223,20 @@ class AuthService
 
             return $this->issueToken($user->fresh());
         });
+
+        if ($outcome === 'locked') {
+            throw ValidationException::withMessages([
+                'code' => ['Too many attempts. Ask your company for a new activation code.'],
+            ]);
+        }
+
+        if ($outcome === 'invalid') {
+            throw ValidationException::withMessages([
+                'code' => ['This activation code is invalid or has expired.'],
+            ]);
+        }
+
+        return $outcome;
     }
 
     private function findByLogin(string $identifier): ?User

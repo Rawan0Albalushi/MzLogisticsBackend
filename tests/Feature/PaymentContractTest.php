@@ -33,6 +33,7 @@ class PaymentContractTest extends TestCase
         parent::setUp();
         $this->seed(RolePermissionSeeder::class);
         $this->seed(PaymentMethodSeeder::class);
+        $this->useCustomerOfferSelection();
     }
 
     public function test_new_shipments_default_to_prepaid_terms(): void

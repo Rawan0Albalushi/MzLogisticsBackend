@@ -11,7 +11,7 @@ use Throwable;
 
 class WhatsAppDriverInviteSender implements DriverInviteSender
 {
-    public function send(User $driver, string $inviteUrl): bool
+    public function send(User $driver, string $activationCode): bool
     {
         if (! filter_var(config('mz.whatsapp.driver_invite_enabled'), FILTER_VALIDATE_BOOLEAN)) {
             return false;
@@ -23,7 +23,10 @@ class WhatsAppDriverInviteSender implements DriverInviteSender
             return false;
         }
 
-        $message = 'تم إنشاء حسابك في MoveX على هذا الرقم. افتح الرابط لتعيين كلمة المرور: '.$inviteUrl;
+        $display = strlen($activationCode) === 6
+            ? substr($activationCode, 0, 3).' '.substr($activationCode, 3)
+            : $activationCode;
+        $message = 'تم إنشاء حسابك في MoveX. افتح التطبيق، أدخل رقم جوالك ورمز التفعيل: '.$display.'، ثم عيّن كلمة المرور.';
 
         try {
             $response = Http::withToken($token)

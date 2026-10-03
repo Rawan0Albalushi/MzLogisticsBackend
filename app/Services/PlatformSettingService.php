@@ -25,7 +25,7 @@ class PlatformSettingService
             ->where('key', self::OFFER_SELECTION_MODE)
             ->value('value');
 
-        return OfferSelectionMode::tryFrom((string) $value) ?? OfferSelectionMode::Customer;
+        return OfferSelectionMode::tryFrom((string) $value) ?? OfferSelectionMode::Admin;
     }
 
     public function updateOfferSelectionMode(User $user, OfferSelectionMode $mode): OfferSelectionMode

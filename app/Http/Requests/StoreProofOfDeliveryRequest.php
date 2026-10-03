@@ -13,10 +13,12 @@ class StoreProofOfDeliveryRequest extends FormRequest
 
     public function rules(): array
     {
+        $platform = $this->user()?->isPlatform() ?? false;
+
         return [
             'receiver_name' => ['nullable', 'string', 'max:120'],
-            'otp' => ['required', 'string', 'size:6'],
-            'received_quantity' => ['required', 'numeric', 'min:0.1'],
+            'otp' => $platform ? ['nullable', 'string', 'size:6'] : ['required', 'string', 'size:6'],
+            'received_quantity' => $platform ? ['nullable', 'numeric', 'min:0.1'] : ['required', 'numeric', 'min:0.1'],
             'notes' => ['nullable', 'string', 'max:1000'],
             'lat' => ['nullable', 'numeric'],
             'lng' => ['nullable', 'numeric'],

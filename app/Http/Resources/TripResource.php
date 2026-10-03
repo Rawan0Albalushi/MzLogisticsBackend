@@ -54,6 +54,26 @@ class TripResource extends JsonResource
                     'paid_at' => $this->driverPayable->paid_at,
                 ] : null,
             ),
+            'customer_invoice' => $this->when(
+                (bool) $request->user()?->isPlatform() && $this->relationLoaded('customerInvoice'),
+                function () {
+                    $invoice = $this->customerInvoice;
+                    if ($invoice === null) {
+                        return null;
+                    }
+
+                    $payment = $invoice->relationLoaded('payment') ? $invoice->payment : null;
+                    if ($payment === null && $invoice->relationLoaded('sourcePayment')) {
+                        $payment = $invoice->sourcePayment;
+                    }
+
+                    return [
+                        'status' => $invoice->status,
+                        'due_at' => $invoice->due_at,
+                        'paid_at' => $payment?->paid_at,
+                    ];
+                },
+            ),
             'job' => JobResource::make($this->whenLoaded('transportJob')),
             'truck' => TruckResource::make($this->whenLoaded('truck')),
             'driver' => UserResource::make($this->whenLoaded('driver')),

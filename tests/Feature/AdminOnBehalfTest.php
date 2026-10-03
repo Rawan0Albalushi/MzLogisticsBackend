@@ -89,8 +89,8 @@ class AdminOnBehalfTest extends TestCase
 
         $this->actingAs($manager, 'sanctum')->postJson('/api/v1/customers', $this->customerPayload())
             ->assertCreated()
-            ->assertJsonPath('data.account_type', 'individual')
-            ->assertJsonPath('data.name', 'Huda Al Hinai');
+            ->assertJsonPath('data.account_type', 'company')
+            ->assertJsonPath('data.name', 'Huda Trading');
     }
 
     public function test_staff_without_customer_manage_cannot_create_a_customer(): void
@@ -99,6 +99,65 @@ class AdminOnBehalfTest extends TestCase
 
         $this->actingAs($staff, 'sanctum')->postJson('/api/v1/customers', $this->customerPayload())
             ->assertForbidden();
+    }
+
+    public function test_platform_admin_can_create_an_active_provider(): void
+    {
+        $admin = $this->makePlatformUser(StaffRoles::SUPER_ADMIN);
+
+        $created = $this->actingAs($admin, 'sanctum')->postJson('/api/v1/providers', [
+            'name' => 'Salim Al Habsi',
+            'email' => 'salim@fasthaul.test',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+            'phone' => '96892345678',
+            'company_name' => 'Fast Haul',
+            'company_name_ar' => 'النقل السريع',
+            'commercial_register' => 'CR-1001',
+            'city' => 'Sohar',
+        ])->assertCreated()
+            ->assertJsonPath('data.name', 'Fast Haul')
+            ->assertJsonPath('data.type', 'provider')
+            ->assertJsonPath('data.status', 'active')
+            ->assertJsonPath('data.commercial_register', 'CR-1001');
+
+        $provider = User::query()->where('email', 'salim@fasthaul.test')->firstOrFail();
+        $this->assertSame(UserType::Provider, $provider->user_type);
+        $this->assertSame($created->json('data.id'), $provider->organization_id);
+        $this->assertTrue($provider->hasRole('Provider Admin'));
+        $this->assertSame(OrganizationStatus::Active, $provider->organization->status);
+
+        $this->postJson('/api/v1/auth/login', [
+            'email' => 'salim@fasthaul.test',
+            'password' => 'Password123!',
+        ])->assertOk();
+    }
+
+    public function test_self_registered_provider_stays_pending(): void
+    {
+        $this->postJson('/api/v1/auth/register/provider', [
+            'name' => 'Salim Al Habsi',
+            'email' => 'salim@pending.test',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+            'company_name' => 'Pending Haul',
+        ])->assertCreated();
+
+        $provider = User::query()->where('email', 'salim@pending.test')->firstOrFail();
+        $this->assertSame(OrganizationStatus::Pending, $provider->organization->status);
+    }
+
+    public function test_staff_without_provider_manage_cannot_create_a_provider(): void
+    {
+        $manager = $this->makePlatformUser('Operations Manager');
+
+        $this->actingAs($manager, 'sanctum')->postJson('/api/v1/providers', [
+            'name' => 'Salim Al Habsi',
+            'email' => 'salim@fasthaul.test',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+            'company_name' => 'Fast Haul',
+        ])->assertForbidden();
     }
 
     public function test_customer_cannot_create_another_customer(): void
@@ -167,6 +226,48 @@ class AdminOnBehalfTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_platform_admin_can_update_a_draft_shipment_only(): void
+    {
+        $admin = $this->makePlatformUser(StaffRoles::SUPER_ADMIN);
+        $customer = $this->makeCustomer();
+        $payload = [
+            'customer_organization_id' => $customer->organization_id,
+            'cargo_type' => 'Cement',
+            'weight_tons' => 18,
+            'pickup_city' => 'Sohar',
+            'delivery_city' => 'Nizwa',
+            'required_date' => now()->addDay()->toDateString(),
+        ];
+
+        $draft = $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/shipments', [...$payload, 'publish' => false])
+            ->assertCreated()
+            ->json('data.id');
+
+        $this->actingAs($admin, 'sanctum')->putJson("/api/v1/shipments/{$draft}", [
+            'cargo_type' => 'Steel',
+            'weight_tons' => 12,
+            'pickup_city' => 'Sohar',
+            'delivery_city' => 'Nizwa',
+            'required_date' => now()->addDays(2)->toDateString(),
+        ])->assertOk()
+            ->assertJsonPath('data.cargo_type', 'Steel')
+            ->assertJsonPath('data.status', 'draft');
+
+        $published = $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/shipments', [...$payload, 'publish' => true])
+            ->assertCreated()
+            ->json('data.id');
+
+        $this->actingAs($admin, 'sanctum')->putJson("/api/v1/shipments/{$published}", [
+            'cargo_type' => 'Steel',
+            'weight_tons' => 12,
+            'pickup_city' => 'Sohar',
+            'delivery_city' => 'Nizwa',
+            'required_date' => now()->addDays(2)->toDateString(),
+        ])->assertForbidden();
+    }
+
     private function makePlatformUser(string $role): User
     {
         $user = User::factory()->create(['user_type' => UserType::Platform]);
@@ -202,7 +303,8 @@ class AdminOnBehalfTest extends TestCase
             'email' => $email,
             'password' => 'Password123!',
             'password_confirmation' => 'Password123!',
-            'account_type' => 'individual',
+            'account_type' => 'company',
+            'company_name' => 'Huda Trading',
         ];
     }
 

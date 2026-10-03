@@ -55,7 +55,7 @@ class QuotationOnBehalfTest extends TestCase
         $this->assertTrue($visible->pluck('id')->contains($created->json('data.id')));
 
         $customerQuotes = collect($this->actingAs($customer, 'sanctum')->getJson('/api/v1/quotations')->assertOk()->json('data'));
-        $this->assertTrue($customerQuotes->pluck('id')->contains($created->json('data.id')));
+        $this->assertFalse($customerQuotes->pluck('id')->contains($created->json('data.id')));
     }
 
     public function test_price_per_trip_becomes_the_job_total(): void
