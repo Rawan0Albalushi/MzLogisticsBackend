@@ -136,6 +136,7 @@ Route::prefix('v1')->group(function (): void {
         Route::patch('/organizations/{organization}/commission-rate', [OrganizationController::class, 'updateCommissionRate']);
         Route::post('/organizations/{organization}/verify', [OrganizationController::class, 'verify']);
 
+        Route::get('/finance/statement', [FinanceController::class, 'statement']);
         Route::get('/payments', [FinanceController::class, 'payments']);
         Route::post('/payments/{payment}/confirm-transfer', [PaymentController::class, 'confirmTransfer']);
         Route::get('/payments/{payment}/receipt', [PaymentController::class, 'receipt']);

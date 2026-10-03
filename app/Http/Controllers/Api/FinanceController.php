@@ -11,6 +11,7 @@ use App\Http\Resources\PaymentResource;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Settlement;
+use App\Services\FinanceStatementService;
 use App\Services\JobOrchestrationService;
 use App\Services\SettlementService;
 use App\Support\ApiResponse;
@@ -28,6 +29,22 @@ class FinanceController extends Controller
         private readonly JobOrchestrationService $jobs,
     ) {}
 
+    public function statement(Request $request, FinanceStatementService $statement): JsonResponse
+    {
+        abort_unless($request->user()->isPlatform() && $request->user()->can(Permissions::PAYMENTS_VIEW), 403);
+
+        $filters = $request->validate([
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+            'project_id' => ['nullable', 'integer', 'exists:projects,id'],
+            'job_id' => ['nullable', 'integer', 'exists:transport_jobs,id'],
+            'unassigned' => ['nullable', 'boolean'],
+            'search' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        return ApiResponse::success($statement->build($filters));
+    }
+
     public function payments(Request $request): JsonResponse
     {
         abort_unless($request->user()->can(Permissions::PAYMENTS_VIEW), 403);
@@ -39,6 +56,10 @@ class FinanceController extends Controller
             ->when($user->isProvider(), fn ($q) => $q->whereHas('quotation', fn ($quotation) => $quotation->where('provider_organization_id', $user->organization_id)))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($request->filled('method'), fn ($q) => $q->where('method', $request->string('method')))
+            ->when($request->filled('job_id'), fn ($q) => $q->whereHas('transportJob', fn ($job) => $job->whereKey($request->integer('job_id'))))
+            ->when($request->filled('project'), function ($query) use ($request) {
+                $query->whereHas('transportJob', fn ($job) => $job->where('project_id', $request->integer('project')));
+            })
             ->when($request->filled('search'), function ($q) use ($request) {
                 ListFilters::search(
                     $q,
@@ -70,6 +91,10 @@ class FinanceController extends Controller
             })
             ->when($request->filled('type'), fn ($q) => $q->where('type', $request->string('type')))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
+            ->when($request->filled('job_id'), fn ($q) => $q->where('transport_job_id', $request->integer('job_id')))
+            ->when($request->filled('project'), function ($query) use ($request) {
+                $query->whereHas('transportJob', fn ($job) => $job->where('project_id', $request->integer('project')));
+            })
             ->when($request->filled('search'), function ($q) use ($request) {
                 ListFilters::search(
                     $q,

@@ -33,6 +33,10 @@ class JobResource extends JsonResource
             'currency' => $this->currency,
             'driver_cost' => $this->when($showDriverPay, $driverCost),
             'net_amount' => $this->when($showDriverPay, round((float) $this->total_price - (float) $driverCost, 3)),
+            'platform_statement' => $this->when(
+                is_array($this->resource->getAttribute('platform_statement')),
+                fn () => $this->resource->getAttribute('platform_statement'),
+            ),
             'total_quantity' => $this->total_quantity,
             'delivered_quantity' => $this->delivered_quantity,
             'progress_percent' => $this->progressPercent(),

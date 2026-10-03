@@ -410,6 +410,10 @@ class TripService
             $query->where('transport_job_id', $filters['job_id']);
         }
 
+        if (! empty($filters['project'])) {
+            $query->whereHas('transportJob', fn ($job) => $job->where('project_id', $filters['project']));
+        }
+
         if (! empty($filters['status'])) {
             $query->where('status', $filters['status']);
         }

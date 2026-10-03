@@ -6,6 +6,7 @@ use App\Enums\UserType;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
 use App\Models\TransportJob;
+use App\Services\FinanceStatementService;
 use App\Support\ApiResponse;
 use App\Support\ListFilters;
 use Illuminate\Http\JsonResponse;
@@ -45,23 +46,27 @@ class JobController extends Controller
         return ApiResponse::success(JobResource::collection($jobs));
     }
 
-    public function show(TransportJob $job): JsonResponse
+    public function show(Request $request, TransportJob $job, FinanceStatementService $statement): JsonResponse
     {
         $this->authorize('view', $job);
 
-        return ApiResponse::success(
-            JobResource::make($job->load([
-                'project',
-                'customerOrganization',
-                'providerOrganization',
-                'shipmentRequest',
-                'quotation',
-                'trips.truck',
-                'trips.driver',
-                'trips.proofOfDelivery',
-                'trips.driverPayable',
-                'invoices.trip',
-            ]))
-        );
+        $job->load([
+            'project',
+            'customerOrganization',
+            'providerOrganization',
+            'shipmentRequest',
+            'quotation',
+            'trips.truck',
+            'trips.driver',
+            'trips.proofOfDelivery',
+            'trips.driverPayable',
+            'invoices.trip',
+        ]);
+
+        if ($request->user()?->isPlatform()) {
+            $job->setAttribute('platform_statement', $statement->forJob($job));
+        }
+
+        return ApiResponse::success(JobResource::make($job));
     }
 }

@@ -49,6 +49,10 @@ class DriverPayableService
         return DriverPayable::query()
             ->with(['driver:id,name', 'trip:id,reference', 'transportJob:id,reference'])
             ->when(! empty($filters['status']), fn ($query) => $query->where('status', $filters['status']))
+            ->when(! empty($filters['job_id']), fn ($query) => $query->where('transport_job_id', $filters['job_id']))
+            ->when(! empty($filters['project']), function ($query) use ($filters) {
+                $query->whereHas('transportJob', fn ($job) => $job->where('project_id', $filters['project']));
+            })
             ->when(! empty($filters['search']), function ($query) use ($filters) {
                 ListFilters::search(
                     $query,
