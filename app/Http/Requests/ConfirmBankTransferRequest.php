@@ -22,7 +22,7 @@ class ConfirmBankTransferRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'receipt' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
+            'receipt' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,pdf', 'max:5120'],
             'transfer_reference' => ['nullable', 'string', 'max:64'],
         ];
     }

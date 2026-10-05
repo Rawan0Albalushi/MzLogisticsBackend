@@ -28,6 +28,7 @@ use App\Support\PaymentTerms;
 use App\Support\ReferenceGenerator;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class JobOrchestrationService
@@ -391,12 +392,30 @@ class JobOrchestrationService
     /**
      * @return array{payment: Payment, job: TransportJob|null}
      */
-    public function confirmBankTransfer(User $user, Payment $payment, UploadedFile $receipt, ?string $transferReference): array
+    public function confirmBankTransfer(User $user, Payment $payment, ?UploadedFile $receipt, ?string $transferReference): array
     {
         return DB::transaction(function () use ($user, $payment, $receipt, $transferReference) {
             $payment = Payment::query()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
 
             return $this->completeBankTransfer($user, $payment, $receipt, $transferReference);
+        });
+    }
+
+    public function attachTransferReceipt(User $user, Payment $payment, UploadedFile $receipt): Payment
+    {
+        return DB::transaction(function () use ($user, $payment, $receipt) {
+            $payment = Payment::query()->whereKey($payment->id)->lockForUpdate()->firstOrFail();
+            $this->assertCustomerCanAttachReceipt($user, $payment);
+
+            $payment->forceFill([
+                'receipt_path' => $this->replaceReceipt($payment, $receipt),
+            ])->save();
+
+            AuditLogger::record('payment.receipt_uploaded', $payment, [], [
+                'has_receipt' => true,
+            ], $user);
+
+            return $payment->fresh();
         });
     }
 
@@ -420,7 +439,7 @@ class JobOrchestrationService
     /**
      * @return array{payment: Payment, job: TransportJob|null}
      */
-    private function completeBankTransfer(User $user, Payment $payment, UploadedFile $receipt, ?string $transferReference): array
+    private function completeBankTransfer(User $user, Payment $payment, ?UploadedFile $receipt, ?string $transferReference): array
     {
         $this->assertBankTransfer($payment);
 
@@ -439,13 +458,23 @@ class JobOrchestrationService
             ]);
         }
 
+        $receiptPath = $receipt instanceof UploadedFile
+            ? $this->replaceReceipt($payment, $receipt)
+            : $payment->receipt_path;
+
+        if (! filled($receiptPath)) {
+            throw ValidationException::withMessages([
+                'receipt' => ['The transfer receipt is required.'],
+            ]);
+        }
+
         $reference = trim((string) $transferReference);
         $payment->forceFill([
             'status' => PaymentStatus::Completed,
             'gateway' => 'bank_transfer',
             'gateway_reference' => $reference !== '' ? $reference : 'BANK-'.strtoupper(bin2hex(random_bytes(4))),
             'paid_at' => now(),
-            'receipt_path' => $receipt->store('payments/'.$payment->id, 'local'),
+            'receipt_path' => $receiptPath,
             'transfer_reference' => $reference !== '' ? $reference : null,
             'confirmed_by' => $user->id,
             'gateway_payload' => array_merge($payment->gateway_payload ?? [], [
@@ -989,6 +1018,33 @@ class JobOrchestrationService
         ])->save();
 
         return $payment->fresh();
+    }
+
+    private function assertCustomerCanAttachReceipt(User $user, Payment $payment): void
+    {
+        if (! $user->isCustomer() || $payment->payer_organization_id !== $user->organization_id) {
+            abort(403);
+        }
+
+        $this->assertBankTransfer($payment);
+
+        if (! in_array($payment->status, [PaymentStatus::Pending, PaymentStatus::Processing], true)) {
+            throw ValidationException::withMessages([
+                'payment' => ['This transfer can no longer accept a receipt.'],
+            ]);
+        }
+    }
+
+    private function replaceReceipt(Payment $payment, UploadedFile $receipt): string
+    {
+        $previous = $payment->receipt_path;
+        $path = $receipt->store('payments/'.$payment->id, 'local');
+
+        if (is_string($previous) && $previous !== '' && $previous !== $path) {
+            Storage::disk('local')->delete($previous);
+        }
+
+        return $path;
     }
 
     private function assertBankTransfer(Payment $payment): void

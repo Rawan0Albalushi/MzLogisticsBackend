@@ -123,6 +123,93 @@ class BankTransferPaymentTest extends TestCase
             ->assertOk();
     }
 
+    public function test_customer_uploads_the_bank_transfer_receipt_for_finance_to_confirm(): void
+    {
+        [$customer, $quotationId] = $this->publishedQuotation();
+        $finance = $this->financeManager();
+
+        $accept = $this->actingAs($customer, 'sanctum')
+            ->postJson("/api/v1/quotations/{$quotationId}/accept", ['payment_method' => 'bank_transfer'])
+            ->assertOk();
+
+        $paymentId = (int) $accept->json('data.payment.id');
+
+        $this->actingAs($customer, 'sanctum')
+            ->post('/api/v1/payments/'.$paymentId.'/receipt', [
+                'receipt' => UploadedFile::fake()->create('receipt.pdf', 20, 'application/pdf'),
+            ])
+            ->assertUnprocessable();
+
+        $this->actingAs($finance, 'sanctum')
+            ->post('/api/v1/payments/'.$paymentId.'/receipt', [
+                'receipt' => UploadedFile::fake()->image('receipt.jpg'),
+            ])
+            ->assertForbidden();
+
+        $other = User::factory()->create(['user_type' => UserType::Customer]);
+        $other->assignRole('Company Admin');
+        $this->actingAs($other, 'sanctum')
+            ->post('/api/v1/payments/'.$paymentId.'/receipt', [
+                'receipt' => UploadedFile::fake()->image('receipt.jpg'),
+            ])
+            ->assertForbidden();
+
+        $uploaded = $this->actingAs($customer, 'sanctum')
+            ->post('/api/v1/payments/'.$paymentId.'/receipt', [
+                'receipt' => UploadedFile::fake()->image('receipt.jpg'),
+            ])
+            ->assertOk();
+
+        $uploaded->assertJsonPath('data.payment.status', 'pending');
+        $uploaded->assertJsonPath('data.payment.has_receipt', true);
+        $this->assertDatabaseMissing('transport_jobs', [
+            'quotation_id' => $quotationId,
+        ]);
+
+        $payment = Payment::query()->findOrFail($paymentId);
+        $firstPath = $payment->receipt_path;
+        $this->assertNotNull($firstPath);
+        Storage::disk('local')->assertExists($firstPath);
+
+        $replaced = $this->actingAs($customer, 'sanctum')
+            ->post('/api/v1/payments/'.$paymentId.'/receipt', [
+                'receipt' => UploadedFile::fake()->image('replacement.png'),
+            ])
+            ->assertOk();
+
+        $replaced->assertJsonPath('data.payment.has_receipt', true);
+        $payment = $payment->fresh();
+        $this->assertNotSame($firstPath, $payment->receipt_path);
+        Storage::disk('local')->assertMissing($firstPath);
+        Storage::disk('local')->assertExists($payment->receipt_path);
+        $keptPath = $payment->receipt_path;
+
+        $this->actingAs($customer, 'sanctum')
+            ->get('/api/v1/payments/'.$paymentId.'/receipt')
+            ->assertForbidden();
+
+        $this->actingAs($finance, 'sanctum')
+            ->get('/api/v1/payments/'.$paymentId.'/receipt')
+            ->assertOk();
+
+        $confirmed = $this->actingAs($finance, 'sanctum')
+            ->post('/api/v1/payments/'.$paymentId.'/confirm-transfer', [
+                'transfer_reference' => 'TRX-200',
+            ])
+            ->assertOk();
+
+        $confirmed->assertJsonPath('data.payment.status', 'completed');
+        $confirmed->assertJsonPath('data.payment.has_receipt', true);
+        $confirmed->assertJsonPath('data.job.status', 'pending_dispatch');
+        $this->assertSame($keptPath, Payment::query()->findOrFail($paymentId)->receipt_path);
+
+        $this->actingAs($customer, 'sanctum')
+            ->post('/api/v1/payments/'.$paymentId.'/receipt', [
+                'receipt' => UploadedFile::fake()->image('late.jpg'),
+            ])
+            ->assertUnprocessable();
+    }
+
     public function test_deferred_invoice_stays_open_until_the_transfer_receipt_is_confirmed(): void
     {
         [$customer, $provider, $driver, $truck] = $this->makeCustomerAndProvider(true);

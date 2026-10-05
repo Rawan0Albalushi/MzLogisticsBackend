@@ -139,6 +139,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/finance/statement', [FinanceController::class, 'statement']);
         Route::get('/payments', [FinanceController::class, 'payments']);
         Route::post('/payments/{payment}/confirm-transfer', [PaymentController::class, 'confirmTransfer']);
+        Route::post('/payments/{payment}/receipt', [PaymentController::class, 'uploadReceipt']);
         Route::get('/payments/{payment}/receipt', [PaymentController::class, 'receipt']);
         Route::get('/payments/{payment}/status', [PaymentController::class, 'status']);
         Route::get('/payment-contract', [PaymentContractController::class, 'mine']);

@@ -28,7 +28,10 @@ class PaymentResource extends JsonResource
             'gateway_reference' => $this->gateway_reference,
             'payment_link' => $this->paymentLink(),
             'paid_at' => $this->paid_at,
-            'has_receipt' => $this->when((bool) $viewer?->isPlatform(), $this->hasReceipt()),
+            'has_receipt' => $this->when(
+                (bool) $viewer?->isPlatform() || $viewer?->organization_id === $this->payer_organization_id,
+                $this->hasReceipt(),
+            ),
             'transfer_reference' => $this->when(
                 (bool) $viewer?->isPlatform() || $viewer?->organization_id === $this->payer_organization_id,
                 $this->transfer_reference,

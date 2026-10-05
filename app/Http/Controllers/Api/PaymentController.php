@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Enums\PaymentStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ConfirmBankTransferRequest;
+use App\Http\Requests\UploadTransferReceiptRequest;
 use App\Http\Resources\JobResource;
 use App\Http\Resources\PaymentResource;
 use App\Models\Payment;
@@ -97,12 +98,11 @@ class PaymentController extends Controller
     public function confirmTransfer(ConfirmBankTransferRequest $request, Payment $payment): JsonResponse
     {
         $receipt = $request->file('receipt');
-        abort_unless($receipt instanceof UploadedFile, 422);
 
         $result = $this->jobs->confirmBankTransfer(
             $request->user(),
             $payment,
-            $receipt,
+            $receipt instanceof UploadedFile ? $receipt : null,
             $request->validated('transfer_reference'),
         );
 
@@ -110,6 +110,18 @@ class PaymentController extends Controller
             'payment' => PaymentResource::make($result['payment'])->resolve(),
             'job' => $result['job'] ? JobResource::make($result['job'])->resolve() : null,
         ], 'Bank transfer confirmed.');
+    }
+
+    public function uploadReceipt(UploadTransferReceiptRequest $request, Payment $payment): JsonResponse
+    {
+        $receipt = $request->file('receipt');
+        abort_unless($receipt instanceof UploadedFile, 422);
+
+        $payment = $this->jobs->attachTransferReceipt($request->user(), $payment, $receipt);
+
+        return ApiResponse::success([
+            'payment' => PaymentResource::make($payment)->resolve(),
+        ], 'Transfer receipt uploaded.');
     }
 
     public function receipt(Request $request, Payment $payment): StreamedResponse
