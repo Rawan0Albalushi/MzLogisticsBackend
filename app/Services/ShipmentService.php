@@ -124,11 +124,16 @@ class ShipmentService
         }
 
         if (! empty($filters['search'])) {
+            $relations = [];
+            if (! $user->isProvider()) {
+                $relations['customerOrganization'] = ['name', 'name_ar', 'email'];
+            }
+
             ListFilters::search(
                 $query,
                 $filters['search'],
                 ['reference', 'cargo_type', 'pickup_city', 'delivery_city'],
-                ['customerOrganization' => ['name', 'name_ar', 'email']],
+                $relations,
             );
         }
 

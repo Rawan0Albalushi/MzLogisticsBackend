@@ -27,16 +27,20 @@ class JobController extends Controller
             ->when($request->filled('project'), fn ($q) => $q->where('project_id', $request->integer('project')))
             ->when($request->boolean('without_project'), fn ($q) => $q->whereNull('project_id'))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
-            ->when($request->filled('search'), function ($q) use ($request) {
+            ->when($request->filled('search'), function ($q) use ($request, $user) {
+                $relations = [
+                    'providerOrganization' => ['name', 'name_ar'],
+                    'shipmentRequest' => ['reference', 'pickup_city', 'delivery_city'],
+                ];
+                if (! $user->isProvider()) {
+                    $relations['customerOrganization'] = ['name', 'name_ar', 'email'];
+                }
+
                 ListFilters::search(
                     $q,
                     $request->string('search')->toString(),
                     ['reference'],
-                    [
-                        'customerOrganization' => ['name', 'name_ar', 'email'],
-                        'providerOrganization' => ['name', 'name_ar'],
-                        'shipmentRequest' => ['reference', 'pickup_city', 'delivery_city'],
-                    ],
+                    $relations,
                 );
             })
             ->tap(fn ($q) => ListFilters::dateRange($q, $request->all(), 'created_at'))

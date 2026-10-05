@@ -46,7 +46,10 @@ class JobResource extends JsonResource
                 $this->relationLoaded('project'),
                 fn () => $this->project ? ProjectResource::make($this->project) : null,
             ),
-            'customer' => OrganizationResource::make($this->whenLoaded('customerOrganization')),
+            'customer' => $this->when(
+                ! $viewer?->isProvider(),
+                fn () => OrganizationResource::make($this->whenLoaded('customerOrganization')),
+            ),
             'provider' => OrganizationResource::make($this->whenLoaded('providerOrganization')),
             'shipment' => ShipmentResource::make($this->whenLoaded('shipmentRequest')),
             'quotation' => $this->when(

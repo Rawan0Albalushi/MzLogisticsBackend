@@ -32,7 +32,10 @@ class ShipmentResource extends JsonResource
             'status' => $this->status,
             'offer_selection_mode' => $this->offer_selection_mode ?? 'admin',
             'published_at' => $this->published_at,
-            'customer' => OrganizationResource::make($this->whenLoaded('customerOrganization')),
+            'customer' => $this->when(
+                ! $request->user()?->isProvider(),
+                fn () => OrganizationResource::make($this->whenLoaded('customerOrganization')),
+            ),
             'quotations' => $this->when(
                 $this->relationLoaded('quotations') && ! $this->hidesProviderQuotations($request),
                 fn () => QuotationResource::collection($this->quotations),

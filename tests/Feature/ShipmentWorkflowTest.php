@@ -608,6 +608,92 @@ class ShipmentWorkflowTest extends TestCase
         );
     }
 
+    public function test_provider_cannot_see_the_customer_who_created_the_shipment(): void
+    {
+        [$customer, $provider] = $this->makeCustomerAndProvider();
+        $customer->organization->forceFill([
+            'name_ar' => 'أكمي للتجارة',
+            'email' => 'buyer@acme.test',
+            'phone' => '+96890000000',
+            'commercial_register' => 'CR-998877',
+        ])->save();
+
+        $shipment = $this->actingAs($customer, 'sanctum')->postJson('/api/v1/shipments', [
+            'cargo_type' => 'Cement',
+            'weight_tons' => 20,
+            'quantity' => 20,
+            'pickup_address' => 'Sohar Port',
+            'pickup_city' => 'Sohar',
+            'delivery_address' => 'Nizwa',
+            'delivery_city' => 'Nizwa',
+            'required_date' => now()->addDay()->toDateString(),
+            'publish' => true,
+        ])->assertCreated()
+            ->assertJsonPath('data.customer.name', 'Acme Trading')
+            ->assertJsonPath('data.customer.email', 'buyer@acme.test');
+
+        $shipmentId = $shipment->json('data.id');
+
+        $listed = $this->actingAs($provider, 'sanctum')->getJson('/api/v1/shipments')->assertOk();
+        $listed->assertJsonMissingPath('data.0.customer');
+        $this->assertProviderResponseHidesCustomer($listed->getContent());
+
+        $shown = $this->actingAs($provider, 'sanctum')
+            ->getJson("/api/v1/shipments/{$shipmentId}")
+            ->assertOk()
+            ->assertJsonPath('data.reference', $shipment->json('data.reference'));
+        $shown->assertJsonMissingPath('data.customer');
+        $this->assertProviderResponseHidesCustomer($shown->getContent());
+
+        $this->actingAs($provider, 'sanctum')
+            ->getJson('/api/v1/shipments?search=Acme')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        $quotation = $this->actingAs($provider, 'sanctum')->postJson("/api/v1/shipments/{$shipmentId}/quotations", [
+            'total_price' => 500,
+            'truck_count' => 1,
+            'truck_type' => TruckType::Flatbed->value,
+            'truck_capacity_tons' => 30,
+            'trip_count' => 1,
+            'quantity_per_trip' => 20,
+            'duration_days' => 1,
+            'transport_start_date' => now()->addDay()->toDateString(),
+        ])->assertCreated();
+
+        $quotationView = $this->actingAs($provider, 'sanctum')
+            ->getJson('/api/v1/quotations/'.$quotation->json('data.id'))
+            ->assertOk();
+        $quotationView->assertJsonMissingPath('data.shipment.customer');
+        $this->assertProviderResponseHidesCustomer($quotationView->getContent());
+
+        $job = $this->actingAs($customer, 'sanctum')
+            ->postJson('/api/v1/quotations/'.$quotation->json('data.id').'/accept')
+            ->assertOk()
+            ->assertJsonPath('data.customer.name', 'Acme Trading');
+
+        $providerJob = $this->actingAs($provider, 'sanctum')
+            ->getJson('/api/v1/jobs/'.$job->json('data.id'))
+            ->assertOk();
+        $providerJob->assertJsonMissingPath('data.customer');
+        $providerJob->assertJsonMissingPath('data.shipment.customer');
+        $this->assertProviderResponseHidesCustomer($providerJob->getContent());
+
+        $this->actingAs($provider, 'sanctum')
+            ->getJson('/api/v1/jobs?search=Acme')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+    }
+
+    private function assertProviderResponseHidesCustomer(string $body): void
+    {
+        $this->assertStringNotContainsString('Acme Trading', $body);
+        $this->assertStringNotContainsString('أكمي للتجارة', $body);
+        $this->assertStringNotContainsString('buyer@acme.test', $body);
+        $this->assertStringNotContainsString('+96890000000', $body);
+        $this->assertStringNotContainsString('CR-998877', $body);
+    }
+
     private function makeCustomerAndProvider(bool $withDriver = false): array
     {
         $customerOrg = Organization::query()->create([
